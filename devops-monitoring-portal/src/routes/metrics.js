@@ -2,14 +2,19 @@ const express = require('express');
 
 const router = express.Router();
 
+/** Browsers send Accept: text/html; Prometheus scrapers do not. */
+function wantsHtmlPage(req) {
+  return (req.get('Accept') || '').includes('text/html');
+}
+
 /**
- * Prometheus exposition format (plain text).
- * Scrapers poll GET /metrics; uptime is dynamic from process start time.
+ * Build Prometheus exposition format (plain text).
+ * Shared by the scrape endpoint and the HTML metrics viewer.
  */
-router.get('/', (req, res) => {
+function buildMetricsText() {
   const uptimeSeconds = Math.floor(process.uptime());
 
-  const metrics = [
+  return [
     '# HELP app_info Application metadata',
     '# TYPE app_info gauge',
     'app_info{service="devops-monitoring-portal",version="1.0.0"} 1',
@@ -32,9 +37,24 @@ router.get('/', (req, res) => {
     '# TYPE app_uptime_seconds gauge',
     `app_uptime_seconds ${uptimeSeconds}`,
   ].join('\n');
+}
+
+/**
+ * Prometheus metrics at GET /metrics.
+ * Scrapers receive text/plain; browsers receive a styled HTML page.
+ */
+router.get('/', (req, res) => {
+  const metricsText = buildMetricsText();
+
+  if (wantsHtmlPage(req)) {
+    return res.render('metrics', {
+      title: 'Metrics',
+      metricsText,
+    });
+  }
 
   res.set('Content-Type', 'text/plain; charset=utf-8');
-  res.send(metrics + '\n');
+  res.send(metricsText + '\n');
 });
 
 module.exports = router;

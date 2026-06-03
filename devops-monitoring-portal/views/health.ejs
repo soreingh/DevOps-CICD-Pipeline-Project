@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <a href="/">Dashboard</a>
+    <a href="/security">Security</a>
+    <a href="/deployments">Deployments</a>
+    <a href="/health" class="active">Health</a>
+    <a href="/metrics">Metrics</a>
+  </nav>
+
+  <main class="container">
+    <header class="page-header">
+      <h1>Health Check</h1>
+      <p>Live service health for probes, Jenkins smoke tests, and operators</p>
+    </header>
+
+    <section class="card-grid">
+      <article class="card">
+        <div class="card-label">Status</div>
+        <div class="card-value"><%= health.status %></div>
+      </article>
+      <article class="card">
+        <div class="card-label">Service</div>
+        <div class="card-value"><%= health.service %></div>
+      </article>
+      <article class="card">
+        <div class="card-label">Version</div>
+        <div class="card-value"><%= health.version %></div>
+      </article>
+      <article class="card">
+        <div class="card-label">Environment</div>
+        <div class="card-value"><%= health.environment %></div>
+      </article>
+      <article class="card">
+        <div class="card-label">Timestamp</div>
+        <div class="card-value card-value-small"><%= health.timestamp %></div>
+      </article>
+    </section>
+
+    <section class="section">
+      <h2>API response (JSON)</h2>
+      <p class="api-hint">Automation and Kubernetes probes use this same endpoint without <code>text/html</code> in the Accept header.</p>
+      <pre class="code-block"><code><%= healthJson %></code></pre>
+    </section>
+  </main>
+</body>
+</html>

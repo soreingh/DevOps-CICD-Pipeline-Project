@@ -172,3 +172,41 @@ body {
   font-size: 0.85rem;
   color: var(--muted);
 }
+
+.card-value-small {
+  font-size: 0.85rem;
+  word-break: break-all;
+}
+
+.api-hint {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.api-hint code {
+  font-family: var(--mono);
+  font-size: 0.85em;
+  color: var(--accent);
+}
+
+.code-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.25rem;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.code-block code {
+  white-space: pre;
+}
+
+.metrics-block {
+  max-height: 24rem;
+  overflow-y: auto;
+}
