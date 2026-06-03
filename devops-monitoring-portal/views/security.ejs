@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <a href="/">Dashboard</a>
+    <a href="/security" class="active">Security</a>
+    <a href="/deployments">Deployments</a>
+    <a href="/health">Health</a>
+    <a href="/metrics">Metrics</a>
+  </nav>
+
+  <main class="container">
+    <header class="page-header">
+      <h1>Security Dashboard</h1>
+      <p>DevSecOps scan summary (Trivy, SonarQube)</p>
+    </header>
+
+    <section class="section">
+      <h2>Scan Results</h2>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Check</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Trivy File System Scan</td>
+            <td><span class="badge badge-success"><%= scans.trivyFilesystem %></span></td>
+          </tr>
+          <tr>
+            <td>Trivy Image Scan</td>
+            <td><span class="badge badge-success"><%= scans.trivyImage %></span></td>
+          </tr>
+          <tr>
+            <td>SonarQube Quality Gate</td>
+            <td><span class="badge badge-success"><%= scans.sonarQubeQualityGate %></span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section">
+      <h2>Vulnerabilities</h2>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Severity</th>
+            <th>Count</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Critical Vulnerabilities</td>
+            <td><%= vulnerabilities.critical %></td>
+          </tr>
+          <tr>
+            <td>High Vulnerabilities</td>
+            <td><%= vulnerabilities.high %></td>
+          </tr>
+          <tr>
+            <td>Medium Vulnerabilities</td>
+            <td><%= vulnerabilities.medium %></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <p class="footer-note">Last Scan: <%= lastScan %></p>
+  </main>
+</body>
+</html>
