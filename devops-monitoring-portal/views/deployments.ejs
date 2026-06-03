@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <a href="/">Dashboard</a>
+    <a href="/security">Security</a>
+    <a href="/deployments" class="active">Deployments</a>
+    <a href="/health">Health</a>
+    <a href="/metrics">Metrics</a>
+  </nav>
+
+  <main class="container">
+    <header class="page-header">
+      <h1>Deployment History</h1>
+      <p>Mock Jenkins build and deployment pipeline runs</p>
+    </header>
+
+    <section class="section">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Build</th>
+            <th>Status</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <% builds.forEach(function(build) { %>
+          <tr>
+            <td>Build #<%= build.number %></td>
+            <td>
+              <% if (build.status === 'Successful') { %>
+              <span class="badge badge-success"><%= build.status %></span>
+              <% } else { %>
+              <span class="badge badge-failed"><%= build.status %></span>
+              <% } %>
+            </td>
+            <td><%= build.description %></td>
+          </tr>
+          <% }); %>
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>

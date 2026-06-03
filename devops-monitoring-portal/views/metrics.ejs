@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <a href="/">Dashboard</a>
+    <a href="/security">Security</a>
+    <a href="/deployments">Deployments</a>
+    <a href="/health">Health</a>
+    <a href="/metrics" class="active">Metrics</a>
+  </nav>
+
+  <main class="container">
+    <header class="page-header">
+      <h1>Prometheus Metrics</h1>
+      <p>Exposition format scraped from <code>GET /metrics</code></p>
+    </header>
+
+    <section class="section">
+      <p class="api-hint">Prometheus and curl receive plain text. This page is shown when you open Metrics in the browser.</p>
+      <pre class="code-block metrics-block"><code><%= metricsText %></code></pre>
+    </section>
+
+    <p class="footer-note"><code>app_uptime_seconds</code> updates each time you refresh the page.</p>
+  </main>
+</body>
+</html>

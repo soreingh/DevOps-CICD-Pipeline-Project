@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <a href="/" class="active">Dashboard</a>
+    <a href="/security">Security</a>
+    <a href="/deployments">Deployments</a>
+    <a href="/health">Health</a>
+    <a href="/metrics">Metrics</a>
+  </nav>
+
+  <main class="container">
+    <!-- Static demo values for Jenkins / K8s / observability pipeline showcases -->
+    <header class="page-header">
+      <h1>DevOps Monitoring Portal</h1>
+      <p>Local DevSecOps CI/CD pipeline monitoring dashboard</p>
+    </header>
+
+    <section class="card-grid">
+      <article class="card">
+        <div class="card-label">Application Status</div>
+        <div class="card-value"><%= cards.applicationStatus %></div>
+      </article>
+      <article class="card">
+        <div class="card-label">Current Version</div>
+        <div class="card-value"><%= cards.currentVersion %></div>
+      </article>
+      <article class="card">
+        <div class="card-label">Environment</div>
+        <div class="card-value"><%= cards.environment %></div>
+      </article>
+      <article class="card">
+        <div class="card-label">Last Deployment</div>
+        <div class="card-value"><%= cards.lastDeployment %></div>
+      </article>
+      <article class="card">
+        <div class="card-label">Security Scan Status</div>
+        <div class="card-value"><%= cards.securityScanStatus %></div>
+      </article>
+      <article class="card">
+        <div class="card-label">Jenkins Status</div>
+        <div class="card-value"><%= cards.jenkinsStatus %></div>
+      </article>
+      <article class="card">
+        <div class="card-label">Docker Status</div>
+        <div class="card-value"><%= cards.dockerStatus %></div>
+      </article>
+      <article class="card">
+        <div class="card-label">Kubernetes Status</div>
+        <div class="card-value"><%= cards.kubernetesStatus %></div>
+      </article>
+      <article class="card">
+        <div class="card-label">Prometheus Status</div>
+        <div class="card-value"><%= cards.prometheusStatus %></div>
+      </article>
+      <article class="card">
+        <div class="card-label">Grafana Status</div>
+        <div class="card-value"><%= cards.grafanaStatus %></div>
+      </article>
+    </section>
+
+    <p class="footer-note">Dashboard data is simulated for local pipeline demonstrations.</p>
+  </main>
+</body>
+</html>

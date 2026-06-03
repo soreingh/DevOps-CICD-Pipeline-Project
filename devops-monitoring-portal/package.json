@@ -1,0 +1,36 @@
+{
+  "name": "devops-monitoring-portal",
+  "version": "1.0.0",
+  "description": "Lightweight DevOps monitoring demo app for local Jenkins CI/CD pipeline testing",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "test": "jest",
+    "test:watch": "jest --watch"
+  },
+  "keywords": [
+    "devops",
+    "monitoring",
+    "jenkins",
+    "kubernetes",
+    "prometheus"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "ejs": "^3.1.10",
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.1.9",
+    "supertest": "^7.0.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ]
+  }
+}
