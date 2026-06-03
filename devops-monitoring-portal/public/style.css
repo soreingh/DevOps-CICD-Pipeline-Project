@@ -210,3 +210,138 @@ body {
   max-height: 24rem;
   overflow-y: auto;
 }
+
+/* Metrics dashboard */
+.metrics-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.metrics-header-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.metrics-service-tag {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.metric-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.metric-card-body {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.metric-big-value {
+  font-family: var(--mono);
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--success);
+}
+
+.metric-counter-value {
+  font-family: var(--mono);
+  font-size: 2rem;
+  font-weight: 600;
+  color: var(--accent);
+  line-height: 1.2;
+}
+
+.metric-meta {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
+.metric-status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 12px currentColor;
+}
+
+.metric-status-dot.ok {
+  background: var(--success);
+  color: var(--success);
+}
+
+.metric-status-dot.bad {
+  background: var(--danger);
+  color: var(--danger);
+}
+
+.metric-bar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.metric-bar--accent .metric-bar-fill {
+  background: var(--accent);
+}
+
+.metric-bar-fill {
+  height: 100%;
+  background: var(--success);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.metrics-counter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.metric-counter {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.metrics-table code {
+  font-family: var(--mono);
+  font-size: 0.85em;
+  color: var(--accent);
+}
+
+.metrics-raw {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+}
+
+.metrics-raw summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text);
+  list-style-position: outside;
+}
+
+.metrics-raw summary:hover {
+  color: var(--accent);
+}
+
+.metrics-raw[open] summary {
+  margin-bottom: 1rem;
+}
+
+.metrics-raw .api-hint {
+  margin-bottom: 1rem;
+}
