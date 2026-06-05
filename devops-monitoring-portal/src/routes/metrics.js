@@ -7,35 +7,66 @@ function wantsHtmlPage(req) {
   return (req.get('Accept') || '').includes('text/html');
 }
 
+function formatUptime(seconds) {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) {
+    const minutes = Math.floor(seconds / 60);
+    const remainder = seconds % 60;
+    return remainder ? `${minutes}m ${remainder}s` : `${minutes}m`;
+  }
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
+}
+
+/**
+ * Structured metrics used by the HTML dashboard.
+ * Values mirror the Prometheus exposition demo counters/gauges.
+ */
+function getMetricsSnapshot() {
+  const uptimeSeconds = Math.floor(process.uptime());
+
+  return {
+    service: 'devops-monitoring-portal',
+    version: '1.0.0',
+    uptimeSeconds,
+    uptimeFormatted: formatUptime(uptimeSeconds),
+    health: { value: 1, label: 'Healthy', ok: true },
+    securityScan: { value: 1, label: 'Passed', ok: true },
+    requestsTotal: 100,
+    deploymentsTotal: 5,
+    podsReady: 2,
+    podsTotal: 2,
+  };
+}
+
 /**
  * Build Prometheus exposition format (plain text).
  * Shared by the scrape endpoint and the HTML metrics viewer.
  */
-function buildMetricsText() {
-  const uptimeSeconds = Math.floor(process.uptime());
-
+function buildMetricsText(snapshot = getMetricsSnapshot()) {
   return [
     '# HELP app_info Application metadata',
     '# TYPE app_info gauge',
-    'app_info{service="devops-monitoring-portal",version="1.0.0"} 1',
+    `app_info{service="${snapshot.service}",version="${snapshot.version}"} 1`,
     '# HELP app_health_status Application health (1 = healthy)',
     '# TYPE app_health_status gauge',
-    'app_health_status 1',
+    `app_health_status ${snapshot.health.value}`,
     '# HELP app_requests_total Simulated request counter for demos',
     '# TYPE app_requests_total counter',
-    'app_requests_total 100',
+    `app_requests_total ${snapshot.requestsTotal}`,
     '# HELP app_deployments_total Simulated deployment counter',
     '# TYPE app_deployments_total counter',
-    'app_deployments_total 5',
+    `app_deployments_total ${snapshot.deploymentsTotal}`,
     '# HELP app_security_scan_status Security scan passed (1 = passed)',
     '# TYPE app_security_scan_status gauge',
-    'app_security_scan_status 1',
+    `app_security_scan_status ${snapshot.securityScan.value}`,
     '# HELP app_kubernetes_pods_ready Ready pods in local cluster demo',
     '# TYPE app_kubernetes_pods_ready gauge',
-    'app_kubernetes_pods_ready 2',
+    `app_kubernetes_pods_ready ${snapshot.podsReady}`,
     '# HELP app_uptime_seconds Process uptime in seconds',
     '# TYPE app_uptime_seconds gauge',
-    `app_uptime_seconds ${uptimeSeconds}`,
+    `app_uptime_seconds ${snapshot.uptimeSeconds}`,
   ].join('\n');
 }
 
@@ -44,11 +75,13 @@ function buildMetricsText() {
  * Scrapers receive text/plain; browsers receive a styled HTML page.
  */
 router.get('/', (req, res) => {
-  const metricsText = buildMetricsText();
+  const snapshot = getMetricsSnapshot();
+  const metricsText = buildMetricsText(snapshot);
 
   if (wantsHtmlPage(req)) {
     return res.render('metrics', {
       title: 'Metrics',
+      snapshot,
       metricsText,
     });
   }
@@ -58,3 +91,5 @@ router.get('/', (req, res) => {
 });
 
 module.exports = router;
+module.exports.getMetricsSnapshot = getMetricsSnapshot;
+module.exports.buildMetricsText = buildMetricsText;
