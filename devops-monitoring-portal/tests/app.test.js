@@ -31,6 +31,17 @@ describe('DevOps Monitoring Portal', () => {
     expect(response.text).toContain('app_health_status');
   });
 
+  test('GET /metrics with Accept text/html renders metrics dashboard', async () => {
+    const response = await request(app)
+      .get('/metrics')
+      .set('Accept', 'text/html');
+
+    expect(response.status).toBe(200);
+    expect(response.text).toContain('Metrics Dashboard');
+    expect(response.text).toContain('app_requests_total');
+    expect(response.text).toContain('Prometheus exposition format');
+  });
+
   test('GET /security returns HTTP 200', async () => {
     const response = await request(app).get('/security');
     expect(response.status).toBe(200);

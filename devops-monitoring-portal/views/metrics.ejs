@@ -15,18 +15,142 @@
     <a href="/metrics" class="active">Metrics</a>
   </nav>
 
-  <main class="container">
-    <header class="page-header">
-      <h1>Prometheus Metrics</h1>
-      <p>Exposition format scraped from <code>GET /metrics</code></p>
+  <main class="container metrics-page">
+    <header class="page-header metrics-header">
+      <div>
+        <h1>Metrics Dashboard</h1>
+        <p>Live view of gauges and counters exported for Prometheus</p>
+      </div>
+      <div class="metrics-header-meta">
+        <span class="badge badge-success">Scrape target active</span>
+        <span class="metrics-service-tag"><%= snapshot.service %> · v<%= snapshot.version %></span>
+      </div>
     </header>
 
-    <section class="section">
-      <p class="api-hint">Prometheus and curl receive plain text. This page is shown when you open Metrics in the browser.</p>
-      <pre class="code-block metrics-block"><code><%= metricsText %></code></pre>
+    <section class="metrics-overview card-grid">
+      <article class="card metric-card metric-card--status">
+        <div class="card-label">Application Health</div>
+        <div class="metric-card-body">
+          <span class="metric-status-dot <%= snapshot.health.ok ? 'ok' : 'bad' %>" aria-hidden="true"></span>
+          <span class="metric-big-value"><%= snapshot.health.label %></span>
+        </div>
+        <div class="metric-meta">app_health_status = <%= snapshot.health.value %></div>
+      </article>
+      <article class="card metric-card">
+        <div class="card-label">Security Scan</div>
+        <div class="metric-card-body">
+          <span class="metric-status-dot <%= snapshot.securityScan.ok ? 'ok' : 'bad' %>" aria-hidden="true"></span>
+          <span class="metric-big-value"><%= snapshot.securityScan.label %></span>
+        </div>
+        <div class="metric-meta">app_security_scan_status = <%= snapshot.securityScan.value %></div>
+      </article>
+      <article class="card metric-card">
+        <div class="card-label">Process Uptime</div>
+        <div class="metric-big-value"><%= snapshot.uptimeFormatted %></div>
+        <div class="metric-bar" role="presentation">
+          <div class="metric-bar-fill" style="width: <%= Math.min(100, (snapshot.uptimeSeconds / 300) * 100) %>%"></div>
+        </div>
+        <div class="metric-meta"><%= snapshot.uptimeSeconds %>s · app_uptime_seconds</div>
+      </article>
+      <article class="card metric-card">
+        <div class="card-label">Kubernetes Pods Ready</div>
+        <div class="metric-big-value"><%= snapshot.podsReady %> / <%= snapshot.podsTotal %></div>
+        <div class="metric-bar" role="presentation">
+          <div class="metric-bar-fill" style="width: <%= (snapshot.podsReady / snapshot.podsTotal) * 100 %>%"></div>
+        </div>
+        <div class="metric-meta">app_kubernetes_pods_ready</div>
+      </article>
     </section>
 
-    <p class="footer-note"><code>app_uptime_seconds</code> updates each time you refresh the page.</p>
+    <section class="section">
+      <h2>Traffic &amp; releases</h2>
+      <div class="metrics-counter-grid">
+        <article class="card metric-counter">
+          <div class="card-label">Total Requests</div>
+          <div class="metric-counter-value"><%= snapshot.requestsTotal.toLocaleString() %></div>
+          <div class="metric-bar metric-bar--accent" role="presentation">
+            <div class="metric-bar-fill" style="width: <%= Math.min(100, (snapshot.requestsTotal / 150) * 100) %>%"></div>
+          </div>
+          <div class="metric-meta">counter · app_requests_total</div>
+        </article>
+        <article class="card metric-counter">
+          <div class="card-label">Total Deployments</div>
+          <div class="metric-counter-value"><%= snapshot.deploymentsTotal %></div>
+          <div class="metric-bar metric-bar--accent" role="presentation">
+            <div class="metric-bar-fill" style="width: <%= Math.min(100, (snapshot.deploymentsTotal / 10) * 100) %>%"></div>
+          </div>
+          <div class="metric-meta">counter · app_deployments_total</div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>All exported metrics</h2>
+      <table class="data-table metrics-table">
+        <thead>
+          <tr>
+            <th>Metric</th>
+            <th>Type</th>
+            <th>Value</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>app_info</code></td>
+            <td>gauge</td>
+            <td>service=<%= snapshot.service %>, version=<%= snapshot.version %></td>
+            <td>Application metadata</td>
+          </tr>
+          <tr>
+            <td><code>app_health_status</code></td>
+            <td>gauge</td>
+            <td><span class="badge badge-success"><%= snapshot.health.label %></span></td>
+            <td>Application health (1 = healthy)</td>
+          </tr>
+          <tr>
+            <td><code>app_requests_total</code></td>
+            <td>counter</td>
+            <td><%= snapshot.requestsTotal %></td>
+            <td>Simulated request counter for demos</td>
+          </tr>
+          <tr>
+            <td><code>app_deployments_total</code></td>
+            <td>counter</td>
+            <td><%= snapshot.deploymentsTotal %></td>
+            <td>Simulated deployment counter</td>
+          </tr>
+          <tr>
+            <td><code>app_security_scan_status</code></td>
+            <td>gauge</td>
+            <td><span class="badge badge-success"><%= snapshot.securityScan.label %></span></td>
+            <td>Security scan passed (1 = passed)</td>
+          </tr>
+          <tr>
+            <td><code>app_kubernetes_pods_ready</code></td>
+            <td>gauge</td>
+            <td><%= snapshot.podsReady %></td>
+            <td>Ready pods in local cluster demo</td>
+          </tr>
+          <tr>
+            <td><code>app_uptime_seconds</code></td>
+            <td>gauge</td>
+            <td><%= snapshot.uptimeSeconds %></td>
+            <td>Process uptime in seconds</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section">
+      <details class="metrics-raw">
+        <summary>Prometheus exposition format (raw)</summary>
+        <p class="api-hint">Prometheus and <code>curl</code> receive this text from <code>GET /metrics</code> without an HTML Accept header.</p>
+        <pre class="code-block metrics-block"><code><%= metricsText %></code></pre>
+      </details>
+    </section>
+
+    <p class="footer-note">Refresh the page to update <code>app_uptime_seconds</code>. Scrape endpoint unchanged for Prometheus.</p>
   </main>
 </body>
 </html>
