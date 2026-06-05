@@ -52,6 +52,7 @@ devops-monitoring-portal/
 │   ├── deployment.yml
 │   └── service.yml
 ├── Dockerfile
+├── Jenkinsfile          # CI/CD pipeline (see Jenkins section below)
 ├── .dockerignore
 ├── .gitignore
 ├── package.json
@@ -188,6 +189,49 @@ app_uptime_seconds 42
 ```
 
 `app_uptime_seconds` is computed from `process.uptime()` and increases while the process runs. Configure Prometheus to scrape `http://<host>:3000/metrics`.
+
+## Jenkins Pipeline
+
+The pipeline definition lives in [`Jenkinsfile`](Jenkinsfile) in this folder (Choice B: app subfolder).
+
+### Jenkins job configuration
+
+| Setting | Value |
+|---------|--------|
+| Job type | Pipeline |
+| Definition | Pipeline script from SCM |
+| SCM | Your GitHub repository |
+| Branch | `main` (or your default branch) |
+| **Script Path** | **`devops-monitoring-portal/Jenkinsfile`** |
+
+If Script Path is left as the default `Jenkinsfile`, Jenkins will not find the pipeline and the job will fail immediately.
+
+### Prerequisites (configure before first run)
+
+1. **Plugins:** Pipeline, Git, NodeJS, SonarQube Scanner, Workspace Cleanup
+2. **Global Tool → NodeJS:** name **`node20`**
+3. **Global Tool → SonarScanner:** name **`sonar-scanner`**
+4. **SonarQube server:** name **`sonar-server`**, URL e.g. `http://localhost:9000`, with token
+5. **macOS agent:** Jenkins user can run `docker`, `kubectl`, and `trivy` (Homebrew installs)
+6. **Docker Desktop:** Kubernetes enabled; context `docker-desktop`
+
+### Pipeline stages
+
+| Stage | What it does |
+|-------|----------------|
+| Clean Workspace | Remove files from previous builds |
+| Checkout | Clone latest code from GitHub |
+| Install Dependencies | `npm ci` |
+| Unit Test | `npm test` (Jest/Supertest) |
+| SonarQube Analysis | Code quality scan → local SonarQube |
+| Trivy File System Scan | Vulnerability scan → `trivyfs.txt` |
+| Docker Build | `docker build -t devops-monitoring-portal:latest .` |
+| Trivy Image Scan | Image scan → `trivyimage.txt` |
+| Deploy to Local Kubernetes | `kubectl apply -f kubernetes/` |
+| Verify Deployment | `kubectl get pods/deployments/svc` |
+| Smoke Test | `curl http://localhost:30080/health` |
+
+After a successful build, open [http://localhost:30080](http://localhost:30080). Trivy reports are archived as Jenkins build artifacts.
 
 ## Jenkins DevSecOps Pipeline Fit
 

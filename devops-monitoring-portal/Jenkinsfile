@@ -1,0 +1,240 @@
+/*
+ * Local DevSecOps CI/CD Pipeline — DevOps Monitoring Portal
+ *
+ * Scope: macOS laptop (Jenkins, Docker Desktop, Trivy, SonarQube, local Kubernetes).
+ * After a successful run, open: http://localhost:30080
+ *
+ * JENKINS JOB SETUP (Choice B — app subfolder):
+ *   Pipeline → Definition: Pipeline script from SCM
+ *   Script Path: devops-monitoring-portal/Jenkinsfile   <-- NOT the default "Jenkinsfile"
+ *
+ * Workspace note: Jenkins checks out the full repo to $WORKSPACE (repo root).
+ * Build commands run inside dir(APP_DIR) so paths like "src" and "kubernetes/" match this folder.
+ */
+pipeline {
+    agent any
+
+    tools {
+        // Requires NodeJS plugin + global tool named exactly "node20"
+        nodejs 'node20'
+    }
+
+    environment {
+        // Application folder inside the Git repo (relative to $WORKSPACE)
+        APP_DIR = 'devops-monitoring-portal'
+        APP_NAME = 'devops-monitoring-portal'
+        IMAGE_TAG = 'latest'
+        // Requires SonarScanner plugin + global tool named "sonar-scanner"
+        SONAR_SCANNER_HOME = tool 'sonar-scanner'
+    }
+
+    options {
+        // Adds timestamps to console lines — helps when troubleshooting slow stages
+        timestamps()
+    }
+
+    stages {
+
+        stage('Clean Workspace') {
+            steps {
+                /*
+                 * PURPOSE: Remove leftover files from previous builds (node_modules, scan reports, etc.)
+                 * RUNS IN: repo root ($WORKSPACE)
+                 * IF IT FAILS: Install the "Workspace Cleanup" plugin in Jenkins
+                 */
+                cleanWs()
+            }
+        }
+
+        stage('Checkout') {
+            steps {
+                /*
+                 * PURPOSE: Pull latest source from GitHub into $WORKSPACE
+                 * RUNS IN: repo root
+                 * IF IT FAILS: Check repo URL, branch name, and Git credentials in the job config
+                 */
+                checkout scm
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                /*
+                 * PURPOSE: Install Node.js packages from package-lock.json (reproducible CI install)
+                 * RUNS IN: devops-monitoring-portal/ (same folder as this Jenkinsfile)
+                 * IF IT FAILS:
+                 *   - Confirm Global Tool "node20" exists (Manage Jenkins → Tools)
+                 *   - Confirm package-lock.json is committed in devops-monitoring-portal/
+                 */
+                dir(env.APP_DIR) {
+                    sh 'npm ci'
+                }
+            }
+        }
+
+        stage('Unit Test') {
+            steps {
+                /*
+                 * PURPOSE: Run Jest + Supertest route tests before build/deploy
+                 * RUNS IN: devops-monitoring-portal/
+                 * IF IT FAILS: Read the test names in the console; fix failing routes in src/routes/
+                 */
+                dir(env.APP_DIR) {
+                    sh 'npm test'
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                /*
+                 * PURPOSE: Send code quality results to local SonarQube (http://localhost:9000)
+                 * RUNS IN: devops-monitoring-portal/
+                 * IF IT FAILS:
+                 *   - SonarQube server must be named "sonar-server" (Manage Jenkins → System)
+                 *   - Global tool must be named "sonar-scanner"
+                 *   - SonarQube Docker container must be running
+                 */
+                dir(env.APP_DIR) {
+                    withSonarQubeEnv('sonar-server') {
+                        sh '''
+                            $SONAR_SCANNER_HOME/bin/sonar-scanner \
+                            -Dsonar.projectKey=devops-monitoring-portal \
+                            -Dsonar.projectName=devops-monitoring-portal \
+                            -Dsonar.sources=src \
+                            -Dsonar.tests=tests \
+                            -Dsonar.exclusions=node_modules/**,coverage/**,public/**
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Trivy File System Scan') {
+            steps {
+                /*
+                 * PURPOSE: Scan source and dependencies for HIGH/CRITICAL vulnerabilities
+                 * RUNS IN: devops-monitoring-portal/
+                 * OUTPUT: trivyfs.txt (archived as a build artifact)
+                 * --exit-code 0: report findings but do NOT fail the pipeline (demo-friendly)
+                 * IF IT FAILS:
+                 *   - Run "which trivy" as the Jenkins user on your Mac
+                 *   - Install: brew install trivy
+                 */
+                dir(env.APP_DIR) {
+                    sh '''
+                        trivy fs --severity HIGH,CRITICAL --exit-code 0 . > trivyfs.txt
+                    '''
+                }
+            }
+        }
+
+        stage('Docker Build') {
+            steps {
+                /*
+                 * PURPOSE: Build the production image used by Kubernetes
+                 * RUNS IN: devops-monitoring-portal/ (where Dockerfile lives)
+                 * IMAGE: devops-monitoring-portal:latest — must match kubernetes/deployment.yml
+                 * IF IT FAILS:
+                 *   - Docker Desktop must be running
+                 *   - Jenkins user must be able to run "docker" (socket / permissions on macOS)
+                 */
+                dir(env.APP_DIR) {
+                    sh '''
+                        docker build -t ${APP_NAME}:${IMAGE_TAG} .
+                    '''
+                }
+            }
+        }
+
+        stage('Trivy Image Scan') {
+            steps {
+                /*
+                 * PURPOSE: Scan the built Docker image for HIGH/CRITICAL vulnerabilities
+                 * RUNS IN: devops-monitoring-portal/
+                 * OUTPUT: trivyimage.txt (archived as a build artifact)
+                 * IF IT FAILS: Docker Build stage must have completed; image must exist locally
+                 */
+                dir(env.APP_DIR) {
+                    sh '''
+                        trivy image --severity HIGH,CRITICAL --exit-code 0 ${APP_NAME}:${IMAGE_TAG} > trivyimage.txt
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy to Local Kubernetes') {
+            steps {
+                /*
+                 * PURPOSE: Deploy (or redeploy) the app to Docker Desktop Kubernetes
+                 * RUNS IN: devops-monitoring-portal/
+                 * NOTE: delete before apply causes brief downtime — fine for local demos
+                 * imagePullPolicy: Never in deployment.yml requires the image built above
+                 * IF IT FAILS:
+                 *   - Enable Kubernetes in Docker Desktop
+                 *   - kubectl config current-context should be "docker-desktop"
+                 *   - Run "kubectl get nodes" as the Jenkins user
+                 */
+                dir(env.APP_DIR) {
+                    sh '''
+                        kubectl delete -f kubernetes/ || true
+                        kubectl apply -f kubernetes/
+                        kubectl rollout status deployment/devops-monitoring-portal
+                    '''
+                }
+            }
+        }
+
+        stage('Verify Deployment') {
+            steps {
+                /*
+                 * PURPOSE: Show cluster state in the Jenkins console for quick visual check
+                 * RUNS IN: devops-monitoring-portal/
+                 * IF PODS NOT READY: run "kubectl describe pod <name>" and check /health probes
+                 */
+                dir(env.APP_DIR) {
+                    sh '''
+                        kubectl get pods
+                        kubectl get deployments
+                        kubectl get svc
+                    '''
+                }
+            }
+        }
+
+        stage('Smoke Test') {
+            steps {
+                /*
+                 * PURPOSE: Confirm the app responds on the Kubernetes NodePort after deploy
+                 * URL: http://localhost:30080/health (nodePort 30080 in kubernetes/service.yml)
+                 * IF IT FAILS:
+                 *   - Wait for rollout; check "kubectl get pods" — both replicas should be Running
+                 *   - Confirm service exposes nodePort 30080
+                 */
+                sh '''
+                    curl -sf http://localhost:30080/health
+                    echo ""
+                    echo "Smoke test passed: /health returned HTTP 200"
+                '''
+            }
+        }
+    }
+
+    post {
+        always {
+            /*
+             * Save Trivy reports from devops-monitoring-portal/ even if a later stage fails.
+             * Download them from the build's "Artifacts" tab in Jenkins.
+             */
+            archiveArtifacts artifacts: "${APP_DIR}/trivyfs.txt,${APP_DIR}/trivyimage.txt", allowEmptyArchive: true
+        }
+        success {
+            echo 'Local DevSecOps pipeline completed successfully.'
+            echo 'Access the app at: http://localhost:30080'
+        }
+        failure {
+            echo 'Pipeline failed. Check Jenkins console logs and archived Trivy scan reports.'
+            echo 'Common fixes: Script Path, node20 tool, sonar-server, docker/kubectl/trivy PATH.'
+        }
+    }
+}
