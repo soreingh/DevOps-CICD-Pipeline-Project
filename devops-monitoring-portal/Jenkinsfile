@@ -230,16 +230,18 @@ pipeline {
         stage('Smoke Test') {
             steps {
                 /*
-                 * PURPOSE: Confirm the app responds on the Kubernetes NodePort after deploy
-                 * URL: http://localhost:30080/health (nodePort 30080 in kubernetes/service.yml)
+                 * PURPOSE: Confirm the app responds after deploy
+                 * NOTE: On Docker Desktop / kind clusters, NodePort 30080 is NOT published to
+                 *       localhost on the Mac host, so we verify health in-cluster via kubectl exec.
+                 *       To browse manually: kubectl port-forward svc/devops-monitoring-portal-service 30080:3000
                  * IF IT FAILS:
-                 *   - Wait for rollout; check "kubectl get pods" — both replicas should be Running
-                 *   - Confirm service exposes nodePort 30080
+                 *   - Check pods are Running: kubectl get pods -l app=devops-monitoring-portal
+                 *   - Check /health inside a pod: kubectl exec <pod> -- wget -qO- http://localhost:3000/health
                  */
                 sh '''
-                    curl -sf http://localhost:30080/health
-                    echo ""
-                    echo "Smoke test passed: /health returned HTTP 200"
+                    POD=$(kubectl get pod -l app=devops-monitoring-portal -o jsonpath='{.items[0].metadata.name}')
+                    kubectl exec "$POD" -- wget -qO- http://localhost:3000/health | grep -q '"status":"healthy"'
+                    echo "Smoke test passed: /health returned healthy"
                 '''
             }
         }
