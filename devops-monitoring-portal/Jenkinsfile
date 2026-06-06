@@ -24,6 +24,9 @@ pipeline {
         APP_DIR = 'devops-monitoring-portal'
         APP_NAME = 'devops-monitoring-portal'
         IMAGE_TAG = 'latest'
+        // Cluster node container (Docker Desktop / kind). Its containerd is isolated
+        // from the host Docker daemon, so the built image must be loaded into it.
+        K8S_NODE = 'desktop-control-plane'
         // Requires SonarScanner plugin + global tool named "sonar-scanner"
         SONAR_SCANNER_HOME = tool 'sonar-scanner'
         // Jenkins launchd agent omits Homebrew; trivy/docker/kubectl live here on macOS
@@ -166,13 +169,32 @@ pipeline {
             }
         }
 
+        stage('Load Image into Kubernetes Node') {
+            steps {
+                /*
+                 * PURPOSE: Make the locally built image visible to the cluster's container runtime.
+                 * WHY: deployment.yml uses imagePullPolicy: Never, so the kubelet only uses images
+                 *      already present in the NODE's containerd. "docker build" puts the image in the
+                 *      HOST Docker daemon, whose store is isolated from the node — without this step
+                 *      pods fail with ErrImageNeverPull and the rollout exceeds its progress deadline.
+                 * RUNS IN: devops-monitoring-portal/
+                 * IF IT FAILS:
+                 *   - Confirm node container name: "docker exec ${K8S_NODE} echo ok"
+                 *   - For a kind cluster you can alternatively use: kind load docker-image
+                 */
+                sh '''
+                    docker save ${APP_NAME}:${IMAGE_TAG} | docker exec -i ${K8S_NODE} ctr -n k8s.io images import -
+                '''
+            }
+        }
+
         stage('Deploy to Local Kubernetes') {
             steps {
                 /*
                  * PURPOSE: Deploy (or redeploy) the app to Docker Desktop Kubernetes
                  * RUNS IN: devops-monitoring-portal/
                  * NOTE: delete before apply causes brief downtime — fine for local demos
-                 * imagePullPolicy: Never in deployment.yml requires the image built above
+                 * imagePullPolicy: Never in deployment.yml requires the image loaded into the node above
                  * IF IT FAILS:
                  *   - Enable Kubernetes in Docker Desktop
                  *   - kubectl config current-context should be "docker-desktop"
