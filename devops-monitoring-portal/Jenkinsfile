@@ -26,6 +26,8 @@ pipeline {
         IMAGE_TAG = 'latest'
         // Requires SonarScanner plugin + global tool named "sonar-scanner"
         SONAR_SCANNER_HOME = tool 'sonar-scanner'
+        // Jenkins launchd agent omits Homebrew; trivy/docker/kubectl live here on macOS
+        PATH = "/opt/homebrew/bin:/usr/local/bin:${env.PATH}"
     }
 
     options {
@@ -118,11 +120,12 @@ pipeline {
                  * OUTPUT: trivyfs.txt (archived as a build artifact)
                  * --exit-code 0: report findings but do NOT fail the pipeline (demo-friendly)
                  * IF IT FAILS:
-                 *   - Run "which trivy" as the Jenkins user on your Mac
                  *   - Install: brew install trivy
+                 *   - Confirm PATH includes /opt/homebrew/bin (see environment block above)
                  */
                 dir(env.APP_DIR) {
                     sh '''
+                        command -v trivy
                         trivy fs --severity HIGH,CRITICAL --exit-code 0 . > trivyfs.txt
                     '''
                 }
