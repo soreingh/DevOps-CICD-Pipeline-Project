@@ -238,8 +238,15 @@ pipeline {
                  *   - Check /health inside a pod: kubectl exec <pod> -- wget -qO- http://localhost:3000/health
                  */
                 sh '''
+                    #region agent log
+                    DEBUG_LOG="/Users/luiszara/Documents/DevOps-CICD-Pipeline-Project/.cursor/debug-b2c998.log"
+                    python3 -c "import json,time; open('$DEBUG_LOG','a').write(json.dumps({'sessionId':'b2c998','runId':'jenkins','hypothesisId':'A','location':'Jenkinsfile:SmokeTest','message':'smoke test start','data':{'method':'kubectl-exec'},'timestamp':int(time.time()*1000)})+'\\n')"
+                    #endregion
                     POD=$(kubectl get pod -l app=devops-monitoring-portal -o jsonpath='{.items[0].metadata.name}')
                     kubectl exec "$POD" -- wget -qO- http://localhost:3000/health | grep -q '"status":"healthy"'
+                    #region agent log
+                    python3 -c "import json,time; open('$DEBUG_LOG','a').write(json.dumps({'sessionId':'b2c998','runId':'jenkins','hypothesisId':'A','location':'Jenkinsfile:SmokeTest','message':'smoke test passed','data':{'pod':'$POD'},'timestamp':int(time.time()*1000)})+'\\n')"
+                    #endregion
                     echo "Smoke test passed: /health returned healthy"
                 '''
             }
@@ -248,6 +255,23 @@ pipeline {
 
     post {
         always {
+            script {
+                // #region agent log
+                def debugPayload = groovy.json.JsonOutput.toJson([
+                    sessionId   : 'b2c998',
+                    runId       : 'jenkins',
+                    hypothesisId: 'C',
+                    location    : 'Jenkinsfile:post:always',
+                    message     : 'post always block',
+                    data        : [
+                        currentResult: currentBuild.currentResult,
+                        result       : currentBuild.result,
+                    ],
+                    timestamp   : System.currentTimeMillis(),
+                ])
+                sh """python3 -c "open('/Users/luiszara/Documents/DevOps-CICD-Pipeline-Project/.cursor/debug-b2c998.log','a').write('${debugPayload.replace("'", "'\\''")}'+'\\n')" """
+                // #endregion
+            }
             /*
              * Save Trivy reports from devops-monitoring-portal/ even if a later stage fails.
              * Download them from the build's "Artifacts" tab in Jenkins.
@@ -256,11 +280,31 @@ pipeline {
         }
         success {
             echo 'Local DevSecOps pipeline completed successfully.'
-            echo 'Access the app at: http://localhost:30080'
+            echo 'Browse the app with: kubectl port-forward svc/devops-monitoring-portal-service 30080:3000'
         }
         failure {
-            echo 'Pipeline failed. Check Jenkins console logs and archived Trivy scan reports.'
-            echo 'Common fixes: Script Path, node20 tool, sonar-server, docker/kubectl/trivy PATH.'
+            script {
+                // #region agent log
+                def failedStage = currentBuild.rawBuild.getExecution()?.getCauseOfFailure()?.getShortDescription() ?: 'unknown'
+                def debugPayload = groovy.json.JsonOutput.toJson([
+                    sessionId   : 'b2c998',
+                    runId       : 'jenkins',
+                    hypothesisId: 'C',
+                    location    : 'Jenkinsfile:post:failure',
+                    message     : 'post failure block triggered',
+                    data        : [
+                        currentResult: currentBuild.currentResult,
+                        result       : currentBuild.result,
+                        cause        : failedStage,
+                    ],
+                    timestamp   : System.currentTimeMillis(),
+                ])
+                sh """python3 -c "open('/Users/luiszara/Documents/DevOps-CICD-Pipeline-Project/.cursor/debug-b2c998.log','a').write('${debugPayload.replace("'", "'\\''")}'+'\\n')" """
+                // #endregion
+            }
+            echo "Pipeline failed (result: ${currentBuild.result}). Check the stage above that returned a non-zero exit code."
+            echo 'Archived Trivy reports are under this build Artifacts tab (trivyfs.txt, trivyimage.txt).'
+            echo 'Common fixes: Script Path, node20 tool, sonar-server, docker/kubectl/trivy PATH, smoke test via kubectl exec.'
         }
     }
 }
