@@ -4,8 +4,13 @@
  */
 const request = require('supertest');
 const app = require('../src/app');
+const { resetForTests } = require('../src/metrics/store');
 
 describe('DevOps Monitoring Portal', () => {
+  beforeEach(() => {
+    resetForTests();
+  });
+
   test('GET / returns HTTP 200', async () => {
     const response = await request(app).get('/');
     expect(response.status).toBe(200);
@@ -29,6 +34,16 @@ describe('DevOps Monitoring Portal', () => {
   test('GET /metrics contains "app_health_status"', async () => {
     const response = await request(app).get('/metrics');
     expect(response.text).toContain('app_health_status');
+  });
+
+  test('GET /metrics increments app_requests_total after HTTP hits', async () => {
+    await request(app).get('/health');
+    await request(app).get('/health');
+
+    const response = await request(app).get('/metrics');
+    const match = response.text.match(/app_requests_total (\d+)/);
+    expect(match).not.toBeNull();
+    expect(parseInt(match[1], 10)).toBeGreaterThanOrEqual(2);
   });
 
   test('GET /metrics with Accept text/html renders metrics dashboard', async () => {

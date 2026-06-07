@@ -15,6 +15,9 @@ app.set('views', path.join(__dirname, '../views'));
 // Static assets (CSS) served from /public
 app.use(express.static(path.join(__dirname, '../public')));
 
+// Live request counter for Prometheus (app_requests_total)
+app.use(require('./metrics/middleware'));
+
 // Each route module owns one concern (health probes, metrics scrape, UI pages)
 app.use('/', require('./routes/dashboard'));
 app.use('/health', require('./routes/health'));

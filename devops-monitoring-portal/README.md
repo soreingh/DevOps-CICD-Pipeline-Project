@@ -34,6 +34,9 @@ devops-monitoring-portal/
 ├── src/
 │   ├── app.js              # Express app (exported for tests)
 │   ├── server.js           # HTTP server entry point
+│   ├── metrics/
+│   │   ├── store.js        # Live counters for Prometheus export
+│   │   └── middleware.js   # Increments app_requests_total per HTTP hit
 │   └── routes/
 │       ├── dashboard.js
 │       ├── health.js
@@ -50,7 +53,13 @@ devops-monitoring-portal/
 │   └── app.test.js
 ├── kubernetes/
 │   ├── deployment.yml
-│   └── service.yml
+│   ├── service.yml
+│   └── monitoring/
+│       ├── prometheus-configmap.yml
+│       ├── prometheus-deployment.yml
+│       ├── grafana-datasource-configmap.yml
+│       ├── grafana-dashboard-configmap.yml
+│       └── grafana-deployment.yml
 ├── Dockerfile
 ├── Jenkinsfile          # CI/CD pipeline (see Jenkins section below)
 ├── .dockerignore
@@ -139,24 +148,35 @@ Ensure Docker Desktop Kubernetes is enabled and the image exists locally:
 docker build -t devops-monitoring-portal:latest .
 ```
 
-Apply manifests:
+Apply app and monitoring manifests:
 
 ```bash
 kubectl apply -f kubernetes/
+kubectl apply -f kubernetes/monitoring/
 ```
 
-Check pods and service:
+Check pods and services:
 
 ```bash
 kubectl get pods
-kubectl get svc devops-monitoring-portal-service
+kubectl get svc
 ```
 
-Access the app via NodePort:
+**Access on macOS (Docker Desktop):** NodePort URLs often refuse connections on `localhost`. Use port-forward in separate terminals:
 
-[http://localhost:30080](http://localhost:30080)
+```bash
+kubectl port-forward svc/devops-monitoring-portal-service 30080:3000
+kubectl port-forward svc/prometheus-service 9090:9090
+kubectl port-forward svc/grafana-service 3030:3000
+```
 
-The deployment uses `imagePullPolicy: Never` so Kubernetes uses your locally built image.
+| Service | URL | Notes |
+|---------|-----|-------|
+| App | http://localhost:30080 | Dashboard, `/health`, `/metrics` |
+| Prometheus | http://localhost:9090 | Targets → `devops-monitoring-portal` should be **UP** |
+| Grafana | http://localhost:3030 | Login `admin` / `admin`; dashboard **DevOps Monitoring Portal** |
+
+The app deployment uses `imagePullPolicy: Never` so Kubernetes uses your locally built image. Prometheus and Grafana images pull from Docker Hub on first deploy.
 
 ## Health Endpoint
 
@@ -176,19 +196,60 @@ Kubernetes readiness and liveness probes in `kubernetes/deployment.yml` call thi
 
 ## Metrics Endpoint
 
-`GET /metrics` returns Prometheus text format (`Content-Type: text/plain`). Example metrics:
+`GET /metrics` returns Prometheus text format (`Content-Type: text/plain`). Live counters increment at runtime:
 
 ```
 app_info{service="devops-monitoring-portal",version="1.0.0"} 1
 app_health_status 1
-app_requests_total 100
-app_deployments_total 5
+app_requests_total 12
+app_deployments_total 1
 app_security_scan_status 1
 app_kubernetes_pods_ready 2
 app_uptime_seconds 42
 ```
 
-`app_uptime_seconds` is computed from `process.uptime()` and increases while the process runs. Configure Prometheus to scrape `http://<host>:3000/metrics`.
+- **`app_requests_total`** — incremented on each HTTP request (except `/metrics` scrapes)
+- **`app_uptime_seconds`** — derived from `process.uptime()`
+- **`app_deployments_total`** — set from optional env `DEPLOYMENT_COUNT` (default `1`)
+
+Prometheus in `kubernetes/monitoring/` scrapes `devops-monitoring-portal-service:3000/metrics` every 15 seconds.
+
+## Prometheus and Grafana
+
+### Prerequisites
+
+| Requirement | Notes |
+|-------------|-------|
+| Docker Desktop Kubernetes | Same cluster as the app |
+| Network access | First deploy pulls `prom/prometheus` and `grafana/grafana` from Docker Hub |
+| ~512MB spare RAM | Two additional pods (Prometheus + Grafana) |
+
+No new Jenkins plugins or global tools are required — the pipeline applies monitoring manifests with `kubectl`.
+
+### Data flow
+
+1. App exports metrics at `/metrics`
+2. Prometheus scrapes (ingests) metrics from `devops-monitoring-portal-service:3000`
+3. Grafana queries Prometheus and renders the provisioned **DevOps Monitoring Portal** dashboard
+
+### Verify after deploy
+
+```bash
+# All pods Running (2 app + 1 prometheus + 1 grafana)
+kubectl get pods
+
+# Prometheus has metrics
+kubectl port-forward svc/prometheus-service 9090:9090
+# Open http://localhost:9090 → query: app_uptime_seconds
+
+# Grafana dashboard
+kubectl port-forward svc/grafana-service 3030:3000
+# Open http://localhost:3030 → Dashboards → DevOps Monitoring Portal
+```
+
+### Trivy report encoding
+
+Trivy table output uses UTF-8 box-drawing characters. If archived reports show garbled text like `â"‚`, open the file as **UTF-8** in your editor, or use `--format json` for artifacts.
 
 ## Jenkins Pipeline
 
@@ -214,6 +275,7 @@ If Script Path is left as the default `Jenkinsfile`, Jenkins will not find the p
 4. **SonarQube server:** name **`sonar-server`**, URL e.g. `http://localhost:9000`, with token
 5. **macOS agent:** Jenkins user can run `docker`, `kubectl`, and `trivy` (Homebrew installs)
 6. **Docker Desktop:** Kubernetes enabled; context `docker-desktop`
+7. **Monitoring images:** Docker Hub reachable for `prom/prometheus` and `grafana/grafana` on first deploy
 
 ### Pipeline stages
 
@@ -227,11 +289,13 @@ If Script Path is left as the default `Jenkinsfile`, Jenkins will not find the p
 | Trivy File System Scan | Vulnerability scan → `trivyfs.txt` |
 | Docker Build | `docker build -t devops-monitoring-portal:latest .` |
 | Trivy Image Scan | Image scan → `trivyimage.txt` |
-| Deploy to Local Kubernetes | `kubectl apply -f kubernetes/` |
+| Load Image into Kubernetes Node | Import image into cluster node containerd |
+| Deploy to Local Kubernetes | Apply app + monitoring manifests |
 | Verify Deployment | `kubectl get pods/deployments/svc` |
-| Smoke Test | `curl http://localhost:30080/health` |
+| Smoke Test | In-cluster `/health` check via `kubectl exec` |
+| Verify Monitoring | Prometheus query + Grafana health check |
 
-After a successful build, open [http://localhost:30080](http://localhost:30080). Trivy reports are archived as Jenkins build artifacts.
+After a successful build, use port-forward to access UIs (see [Prometheus and Grafana](#prometheus-and-grafana)). Trivy reports are archived as Jenkins build artifacts.
 
 ## Jenkins DevSecOps Pipeline Fit
 
@@ -243,9 +307,10 @@ After a successful build, open [http://localhost:30080](http://localhost:30080).
 | **Trivy FS scan** | Scan project directory; security page shows filesystem scan status |
 | **Docker build** | `docker build` using included Dockerfile |
 | **Trivy image scan** | Scan `devops-monitoring-portal:latest` after build |
-| **Deploy to K8s** | `kubectl apply -f kubernetes/` — 2 replicas with `/health` probes |
-| **Smoke test** | `curl /health` expects `"status":"healthy"` |
-| **Observability** | Prometheus scrapes `/metrics`; Grafana dashboards can chart exported metrics |
+| **Deploy to K8s** | `kubectl apply` app + `kubernetes/monitoring/` — 2 app replicas with `/health` probes |
+| **Smoke test** | In-cluster `/health` via `kubectl exec` |
+| **Verify Monitoring** | Prometheus `app_uptime_seconds` query + Grafana `/api/health` |
+| **Observability** | Prometheus scrapes live `/metrics`; Grafana dashboard charts uptime, health, request rate |
 
 This application is intentionally small and self-contained so each pipeline stage completes quickly on a local Mac Jenkins agent.
 
