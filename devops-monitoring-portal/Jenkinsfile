@@ -267,7 +267,7 @@ pipeline {
                         | grep -q '"status":"success"'
 
                     kubectl exec deploy/grafana -- wget -qO- http://localhost:3000/api/health \
-                        | grep -q '"database":"ok"'
+                        | grep -Eq '"database"[[:space:]]*:[[:space:]]*"ok"'
 
                     echo "Monitoring verification passed: Prometheus query OK, Grafana healthy"
                 '''
