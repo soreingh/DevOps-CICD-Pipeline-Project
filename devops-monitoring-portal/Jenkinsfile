@@ -2,7 +2,7 @@
  * Local DevSecOps CI/CD Pipeline — DevOps Monitoring Portal
  *
  * Scope: macOS laptop (Jenkins, Docker Desktop, Trivy, SonarQube, local Kubernetes).
- * After a successful run, port-forward services to access UIs on macOS (see post success block).
+ * After a successful run, open services on localhost via Docker Desktop LoadBalancer (see post success block).
  *
  * JENKINS JOB SETUP (Choice B — app subfolder):
  *   Pipeline → Definition: Pipeline script from SCM
@@ -235,10 +235,8 @@ pipeline {
         stage('Smoke Test') {
             steps {
                 /*
-                 * PURPOSE: Confirm the app responds after deploy
-                 * NOTE: On Docker Desktop / kind clusters, NodePort 30080 is NOT published to
-                 *       localhost on the Mac host, so we verify health in-cluster via kubectl exec.
-                 *       To browse manually: kubectl port-forward svc/devops-monitoring-portal-service 30080:3000
+                 * PURPOSE: Confirm the app responds after deploy (in-cluster check)
+                 * NOTE: LoadBalancer exposes the app at http://localhost:30080 after deploy on Docker Desktop
                  * IF IT FAILS:
                  *   - Check pods are Running: kubectl get pods -l app=devops-monitoring-portal
                  *   - Check /health inside a pod: kubectl exec <pod> -- wget -qO- http://localhost:3000/health
@@ -273,6 +271,37 @@ pipeline {
                 '''
             }
         }
+
+        stage('Verify Local Access') {
+            steps {
+                /*
+                 * PURPOSE: Confirm Docker Desktop LoadBalancer exposes services on localhost after deploy.
+                 * WHY: Replaces manual kubectl port-forward on macOS — services stay reachable after the job ends.
+                 * IF IT FAILS:
+                 *   - kubectl get svc — EXTERNAL-IP should become localhost for LoadBalancer services
+                 *   - Ensure Docker Desktop Kubernetes is enabled (not plain kind without LB support)
+                 *   - Stop conflicting local processes on ports 30080, 9091, 3030
+                 */
+                sh '''
+                    echo "Waiting for LoadBalancer services on localhost..."
+                    for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+                      if curl -sf http://localhost:30080/health | grep -q '"status":"healthy"'; then
+                        break
+                      fi
+                      sleep 5
+                    done
+
+                    curl -sf http://localhost:30080/health | grep -q '"status":"healthy"'
+                    curl -sf http://localhost:9091/-/ready | grep -q 'Prometheus is Ready'
+                    curl -sf http://localhost:3030/api/health | grep -Eq '"database"[[:space:]]*:[[:space:]]*"ok"'
+
+                    echo "Local access verified:"
+                    echo "  App:        http://localhost:30080"
+                    echo "  Prometheus: http://localhost:9091"
+                    echo "  Grafana:    http://localhost:3030  (login admin/admin)"
+                '''
+            }
+        }
     }
 
     post {
@@ -285,9 +314,9 @@ pipeline {
         }
         success {
             echo 'Local DevSecOps pipeline completed successfully.'
-            echo 'App:        kubectl port-forward svc/devops-monitoring-portal-service 30080:3000'
-            echo 'Prometheus: kubectl port-forward svc/prometheus-service 9090:9090'
-            echo 'Grafana:    kubectl port-forward svc/grafana-service 3030:3000  (login admin/admin)'
+            echo 'App:        http://localhost:30080'
+            echo 'Prometheus: http://localhost:9091  (9090 kept free for local Prometheus installs)'
+            echo 'Grafana:    http://localhost:3030  (login admin/admin)'
         }
         failure {
             echo "Pipeline failed (result: ${currentBuild.result}). Check the stage above that returned a non-zero exit code."

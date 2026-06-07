@@ -15,7 +15,7 @@ The DevOps Monitoring Portal provides a simple web dashboard and API endpoints t
 - **Deployments page** (`GET /deployments`) — Mock Jenkins build history
 - **Jest + Supertest** — Automated route tests for CI pipelines
 - **Docker** — Production-ready `node:20-alpine` image
-- **Kubernetes** — Deployment (2 replicas) and NodePort service
+- **Kubernetes** — Deployment (2 replicas) and LoadBalancer services (localhost on Docker Desktop)
 
 ## Tech Stack
 
@@ -162,18 +162,17 @@ kubectl get pods
 kubectl get svc
 ```
 
-**Access on macOS (Docker Desktop):** NodePort URLs often refuse connections on `localhost`. Use port-forward in separate terminals:
+**Access on Docker Desktop (after Jenkins deploy or `kubectl apply`):** Services use `type: LoadBalancer`. Docker Desktop publishes them on `localhost` automatically — no `kubectl port-forward` required.
 
 ```bash
-kubectl port-forward svc/devops-monitoring-portal-service 30080:3000
-kubectl port-forward svc/prometheus-service 9090:9090
-kubectl port-forward svc/grafana-service 3030:3000
+kubectl get svc
+# EXTERNAL-IP column should show localhost for app, prometheus, and grafana services
 ```
 
 | Service | URL | Notes |
 |---------|-----|-------|
 | App | http://localhost:30080 | Dashboard, `/health`, `/metrics` |
-| Prometheus | http://localhost:9090 | Targets → `devops-monitoring-portal` should be **UP** |
+| Prometheus | http://localhost:9091 | Cluster Prometheus (9090 left free for local installs) |
 | Grafana | http://localhost:3030 | Login `admin` / `admin`; dashboard **DevOps Monitoring Portal** |
 
 The app deployment uses `imagePullPolicy: Never` so Kubernetes uses your locally built image. Prometheus and Grafana images pull from Docker Hub on first deploy.
@@ -212,7 +211,7 @@ app_uptime_seconds 42
 - **`app_uptime_seconds`** — derived from `process.uptime()`
 - **`app_deployments_total`** — set from optional env `DEPLOYMENT_COUNT` (default `1`)
 
-Prometheus in `kubernetes/monitoring/` scrapes `devops-monitoring-portal-service:3000/metrics` every 15 seconds.
+Prometheus in `kubernetes/monitoring/` scrapes `devops-monitoring-portal-service:30080/metrics` every 15 seconds.
 
 ## Prometheus and Grafana
 
@@ -229,23 +228,21 @@ No new Jenkins plugins or global tools are required — the pipeline applies mon
 ### Data flow
 
 1. App exports metrics at `/metrics`
-2. Prometheus scrapes (ingests) metrics from `devops-monitoring-portal-service:3000`
+2. Prometheus scrapes (ingests) metrics from `devops-monitoring-portal-service:30080`
 3. Grafana queries Prometheus and renders the provisioned **DevOps Monitoring Portal** dashboard
 
 ### Verify after deploy
 
 ```bash
-# All pods Running (2 app + 1 prometheus + 1 grafana)
 kubectl get pods
+kubectl get svc
 
-# Prometheus has metrics
-kubectl port-forward svc/prometheus-service 9090:9090
-# Open http://localhost:9090 → query: app_uptime_seconds
-
-# Grafana dashboard
-kubectl port-forward svc/grafana-service 3030:3000
-# Open http://localhost:3030 → Dashboards → DevOps Monitoring Portal
+curl http://localhost:30080/health
+# Prometheus → http://localhost:9091/targets (devops-monitoring-portal should be UP)
+# Grafana → http://localhost:3030 → Dashboards → DevOps Monitoring Portal
 ```
+
+The Jenkins **Verify Local Access** stage runs these checks automatically after each pipeline run.
 
 ### Trivy report encoding
 
@@ -294,8 +291,9 @@ If Script Path is left as the default `Jenkinsfile`, Jenkins will not find the p
 | Verify Deployment | `kubectl get pods/deployments/svc` |
 | Smoke Test | In-cluster `/health` check via `kubectl exec` |
 | Verify Monitoring | Prometheus query + Grafana health check |
+| Verify Local Access | Confirms http://localhost:30080, :9091, :3030 respond (LoadBalancer) |
 
-After a successful build, use port-forward to access UIs (see [Prometheus and Grafana](#prometheus-and-grafana)). Trivy reports are archived as Jenkins build artifacts.
+After a successful build, open the localhost URLs above. Trivy reports are archived as Jenkins build artifacts.
 
 ## Jenkins DevSecOps Pipeline Fit
 

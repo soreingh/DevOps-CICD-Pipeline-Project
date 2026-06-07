@@ -14,4 +14,4 @@ data:
         metrics_path: /metrics
         static_configs:
           - targets:
-              - devops-monitoring-portal-service:3000
+              - devops-monitoring-portal-service:30080

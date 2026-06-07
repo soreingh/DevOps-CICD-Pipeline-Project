@@ -12,6 +12,6 @@ data:
         uid: prometheus
         type: prometheus
         access: proxy
-        url: http://prometheus-service:9090
+        url: http://prometheus-service:9091
         isDefault: true
         editable: true

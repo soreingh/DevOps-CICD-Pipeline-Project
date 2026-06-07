@@ -38,10 +38,11 @@ metadata:
   labels:
     app: prometheus
 spec:
-  type: NodePort
+  # LoadBalancer: Docker Desktop publishes on localhost:9091 (9090 reserved for local Prometheus installs)
+  type: LoadBalancer
   selector:
     app: prometheus
   ports:
-    - port: 9090
+    - name: http
+      port: 9091
       targetPort: 9090
-      nodePort: 30090

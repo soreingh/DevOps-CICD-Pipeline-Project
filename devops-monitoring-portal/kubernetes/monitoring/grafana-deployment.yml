@@ -46,10 +46,11 @@ metadata:
   labels:
     app: grafana
 spec:
-  type: NodePort
+  # LoadBalancer: Docker Desktop publishes on localhost:3030 (no port-forward needed)
+  type: LoadBalancer
   selector:
     app: grafana
   ports:
-    - port: 3000
+    - name: http
+      port: 3030
       targetPort: 3000
-      nodePort: 30300
