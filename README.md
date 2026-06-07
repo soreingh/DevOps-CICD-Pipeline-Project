@@ -17,4 +17,4 @@ devops-monitoring-portal/Jenkinsfile
 
 Full prerequisites, stage list, and troubleshooting notes are in [`devops-monitoring-portal/README.md`](devops-monitoring-portal/README.md#jenkins-pipeline).
 
-After a successful pipeline run, access the app at [http://localhost:30080](http://localhost:30080).
+After a successful pipeline run, use `kubectl port-forward` to access the app, Prometheus, and Grafana (NodePorts are often unreachable on Docker Desktop for Mac). See [Observability](devops-monitoring-portal/README.md#prometheus-and-grafana).
