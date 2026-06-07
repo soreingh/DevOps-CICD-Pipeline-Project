@@ -292,7 +292,21 @@ pipeline {
                     done
 
                     curl -sf http://localhost:30080/health | grep -q '"status":"healthy"'
-                    curl -sf http://localhost:9091/-/ready | grep -q 'Prometheus is Ready'
+
+                    for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+                      if curl -sf http://localhost:9091/-/ready | grep -q 'Prometheus Server is Ready'; then
+                        break
+                      fi
+                      sleep 5
+                    done
+                    curl -sf http://localhost:9091/-/ready | grep -q 'Prometheus Server is Ready'
+
+                    for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+                      if curl -sf http://localhost:3030/api/health | grep -Eq '"database"[[:space:]]*:[[:space:]]*"ok"'; then
+                        break
+                      fi
+                      sleep 5
+                    done
                     curl -sf http://localhost:3030/api/health | grep -Eq '"database"[[:space:]]*:[[:space:]]*"ok"'
 
                     echo "Local access verified:"
