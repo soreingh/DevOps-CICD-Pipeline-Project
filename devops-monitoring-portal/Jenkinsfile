@@ -30,7 +30,21 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                checkout scm
+                retry(2) {
+                    script {
+                        echo 'Cloning from GitHub (shallow fetch, 20 min timeout per attempt)...'
+                        checkout([
+                            $class: 'GitSCM',
+                            branches: scm.branches,
+                            doGenerateSubmoduleConfigurations: false,
+                            extensions: (scm.extensions ?: []) + [
+                                [$class: 'CloneOption', depth: 1, shallow: true, timeout: 20, noTags: false],
+                                [$class: 'CheckoutOption', timeout: 20],
+                            ],
+                            userRemoteConfigs: scm.userRemoteConfigs,
+                        ])
+                    }
+                }
             }
         }
 
