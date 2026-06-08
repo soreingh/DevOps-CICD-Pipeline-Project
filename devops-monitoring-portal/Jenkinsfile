@@ -37,7 +37,17 @@ pipeline {
         stage('Preflight') {
             steps {
                 dir(env.APP_DIR) {
-                    sh 'chmod +x scripts/preflight.sh && K8S_NODE=${K8S_NODE} ./scripts/preflight.sh'
+                    sh '''
+                        chmod +x scripts/preflight.sh
+                        export DEBUG_LOG="${WORKSPACE}/.cursor/debug-dfd10b.log"
+                        export DEBUG_RUN_ID="jenkins-${BUILD_NUMBER}"
+                        mkdir -p "$(dirname "${DEBUG_LOG}")"
+                        K8S_NODE=${K8S_NODE} ./scripts/preflight.sh || {
+                          echo "--- Preflight debug log (last 20 lines) ---"
+                          tail -20 "${DEBUG_LOG}" 2>/dev/null || true
+                          exit 1
+                        }
+                    '''
                 }
             }
         }
@@ -129,9 +139,12 @@ pipeline {
 
         stage('Load Image into Kubernetes Node') {
             steps {
-                sh '''
-                    docker save ${APP_NAME}:${BUILD_NUMBER} | docker exec -i ${K8S_NODE} ctr -n k8s.io images import -
-                '''
+                dir(env.APP_DIR) {
+                    sh '''
+                        chmod +x scripts/load-image-k8s.sh
+                        ./scripts/load-image-k8s.sh ${APP_NAME} ${BUILD_NUMBER}
+                    '''
+                }
             }
         }
 
