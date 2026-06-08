@@ -24,5 +24,6 @@ app.use('/health', require('./routes/health'));
 app.use('/metrics', require('./routes/metrics'));
 app.use('/security', require('./routes/security'));
 app.use('/deployments', require('./routes/deployments'));
+app.use('/api', require('./routes/api'));
 
 module.exports = app;

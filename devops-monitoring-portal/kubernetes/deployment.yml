@@ -21,6 +21,13 @@ spec:
           imagePullPolicy: Never
           ports:
             - containerPort: 3000
+          env:
+            - name: PIPELINE_STATUS_PATH
+              value: /data/pipeline-status.json
+          volumeMounts:
+            - name: pipeline-status
+              mountPath: /data
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /health
@@ -33,3 +40,8 @@ spec:
               port: 3000
             initialDelaySeconds: 15
             periodSeconds: 20
+      volumes:
+        - name: pipeline-status
+          configMap:
+            name: pipeline-status
+            optional: true

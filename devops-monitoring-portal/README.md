@@ -4,15 +4,16 @@ A lightweight Node.js monitoring demo application for local macOS DevSecOps CI/C
 
 ## Project Overview
 
-The DevOps Monitoring Portal provides a simple web dashboard and API endpoints that simulate a production monitoring stack. It is designed for pipeline demonstrations: unit tests in Jenkins, container scans with Trivy, quality gates in SonarQube, Docker image builds, Kubernetes deployments, and Prometheus metric scraping.
+The DevOps Monitoring Portal provides a web dashboard and API endpoints fed by real Jenkins pipeline data. Each build publishes a `pipeline-status.json` snapshot (stages, Trivy counts, K8s pod status, build history) that the app reads from a Kubernetes ConfigMap. Prometheus and Grafana health is checked live on each page load.
 
 ## Features
 
-- **Dashboard** (`GET /`) — DevOps-style status cards for app, Jenkins, Docker, Kubernetes, Prometheus, and Grafana
+- **Dashboard** (`GET /`) — Status cards from the latest Jenkins pipeline snapshot + live Prometheus/Grafana probes
 - **Health API** (`GET /health`) — JSON health check for probes and smoke tests
-- **Metrics API** (`GET /metrics`) — Prometheus exposition format with dynamic uptime
-- **Security page** (`GET /security`) — Mock Trivy and SonarQube scan summary
-- **Deployments page** (`GET /deployments`) — Mock Jenkins build history
+- **Metrics API** (`GET /metrics`) — Prometheus exposition format with live request counts and pipeline K8s metrics
+- **Security page** (`GET /security`) — Trivy/SonarQube stage results and vulnerability counts from the last build
+- **Deployments page** (`GET /deployments`) — Recent Jenkins build history from the pipeline snapshot
+- **Pipeline API** (`GET /api/pipeline-status`) — Raw JSON snapshot for debugging
 - **Jest + Supertest** — Automated route tests for CI pipelines
 - **Docker** — Production-ready `node:20-alpine` image
 - **Kubernetes** — Deployment (2 replicas) and LoadBalancer services (localhost on Docker Desktop)
@@ -209,9 +210,24 @@ app_uptime_seconds 42
 
 - **`app_requests_total`** — incremented on each HTTP request (except `/metrics` scrapes)
 - **`app_uptime_seconds`** — derived from `process.uptime()`
-- **`app_deployments_total`** — set from optional env `DEPLOYMENT_COUNT` (default `1`)
+- **`app_deployments_total`** — Jenkins build number from pipeline snapshot
+- **`app_kubernetes_pods_ready`** — ready pod count captured during Verify Deployment
 
 Prometheus in `kubernetes/monitoring/` scrapes `devops-monitoring-portal-service:30080/metrics` every 15 seconds.
+
+## Pipeline status data (Jenkins → app)
+
+After every Jenkins run (success or failure), the `post { always }` block:
+
+1. Fetches stage results from `${BUILD_URL}wfapi/describe`
+2. Fetches recent builds from the Jenkins API
+3. Summarizes Trivy JSON reports (`trivyfs.json`, `trivyimage.json`)
+4. Writes `data/pipeline-status.json` via `scripts/generate-pipeline-status.js`
+5. Publishes it to the `pipeline-status` ConfigMap (mounted at `/data` in app pods)
+
+The UI reflects the **last completed build**. Prometheus/Grafana cards on the dashboard are **live** (HTTP probes inside the cluster).
+
+First run may show seed/empty data until `post` publishes the ConfigMap. No Jenkins API token is stored in the app.
 
 ## Prometheus and Grafana
 
@@ -283,17 +299,18 @@ If Script Path is left as the default `Jenkinsfile`, Jenkins will not find the p
 | Install Dependencies | `npm ci` |
 | Unit Test | `npm test` (Jest/Supertest) |
 | SonarQube Analysis | Code quality scan → local SonarQube |
-| Trivy File System Scan | Vulnerability scan → `trivyfs.txt` |
+| Trivy File System Scan | Vulnerability scan → `trivyfs.txt` + `trivyfs.json` |
 | Docker Build | `docker build -t devops-monitoring-portal:latest .` |
-| Trivy Image Scan | Image scan → `trivyimage.txt` |
+| Trivy Image Scan | Image scan → `trivyimage.txt` + `trivyimage.json` |
 | Load Image into Kubernetes Node | Import image into cluster node containerd |
 | Deploy to Local Kubernetes | Apply app + monitoring manifests |
 | Verify Deployment | `kubectl get pods/deployments/svc` |
 | Smoke Test | In-cluster `/health` check via `kubectl exec` |
 | Verify Monitoring | Prometheus query + Grafana health check |
 | Verify Local Access | Confirms http://localhost:30080, :9091, :3030 respond (LoadBalancer) |
+| post always | Publishes `pipeline-status.json` to ConfigMap; archives Trivy + status artifacts |
 
-After a successful build, open the localhost URLs above. Trivy reports are archived as Jenkins build artifacts.
+After a successful build, open the localhost URLs above. Dashboard/security/deployments pages show data from that build.
 
 ## Jenkins DevSecOps Pipeline Fit
 
@@ -301,13 +318,14 @@ After a successful build, open the localhost URLs above. Trivy reports are archi
 |----------------|---------------------------|
 | **Checkout** | Clone repo containing `devops-monitoring-portal/` |
 | **Unit tests** | `npm test` — Jest validates all HTTP routes |
-| **SonarQube** | Scan `src/` for code quality; security page reflects quality gate narrative |
-| **Trivy FS scan** | Scan project directory; security page shows filesystem scan status |
+| **SonarQube** | Scan `src/`; security page shows SonarQube stage pass/fail from snapshot |
+| **Trivy FS scan** | Scan project directory; security page shows real HIGH/CRITICAL counts from Trivy JSON |
 | **Docker build** | `docker build` using included Dockerfile |
 | **Trivy image scan** | Scan `devops-monitoring-portal:latest` after build |
 | **Deploy to K8s** | `kubectl apply` app + `kubernetes/monitoring/` — 2 app replicas with `/health` probes |
 | **Smoke test** | In-cluster `/health` via `kubectl exec` |
 | **Verify Monitoring** | Prometheus `app_uptime_seconds` query + Grafana `/api/health` |
+| **post always** | Publishes pipeline snapshot ConfigMap consumed by dashboard, security, deployments |
 | **Observability** | Prometheus scrapes live `/metrics`; Grafana dashboard charts uptime, health, request rate |
 
 This application is intentionally small and self-contained so each pipeline stage completes quickly on a local Mac Jenkins agent.

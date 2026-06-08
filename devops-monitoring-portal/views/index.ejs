@@ -16,10 +16,9 @@
   </nav>
 
   <main class="container">
-    <!-- Static demo values for Jenkins / K8s / observability pipeline showcases -->
     <header class="page-header">
       <h1>DevOps Monitoring Portal</h1>
-      <p>Local DevSecOps CI/CD pipeline monitoring dashboard</p>
+      <p>Live pipeline snapshot from Jenkins<% if (cards.buildNumber) { %> — build #<%= cards.buildNumber %><% } %></p>
     </header>
 
     <section class="card-grid">
@@ -65,7 +64,7 @@
       </article>
     </section>
 
-    <p class="footer-note">Dashboard data is simulated for local pipeline demonstrations.</p>
+    <p class="footer-note">Last pipeline update: <%= cards.lastPipelineAt %>. Prometheus/Grafana status is checked live.</p>
   </main>
 </body>
 </html>

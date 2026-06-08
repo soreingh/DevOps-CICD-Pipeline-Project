@@ -1,25 +1,19 @@
 const express = require('express');
+const { getDashboardCards } = require('../services/pipelineStatus');
+const { getLiveObservabilityStatus } = require('../services/liveStatus');
 
 const router = express.Router();
 
-/**
- * Main monitoring dashboard.
- * Values are static mock data for CI/CD demos (Jenkins, K8s, Prometheus, etc.).
- */
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
+  const cards = getDashboardCards();
+  const live = await getLiveObservabilityStatus();
+
   res.render('index', {
     title: 'DevOps Monitoring Portal',
     cards: {
-      applicationStatus: 'Healthy',
-      currentVersion: 'v1.0.0',
-      environment: 'Local Kubernetes',
-      lastDeployment: 'Successful',
-      securityScanStatus: 'Passed',
-      jenkinsStatus: 'Online',
-      dockerStatus: 'Running',
-      kubernetesStatus: 'Healthy',
-      prometheusStatus: 'Scraping',
-      grafanaStatus: 'Available',
+      ...cards,
+      prometheusStatus: live.prometheusStatus,
+      grafanaStatus: live.grafanaStatus,
     },
   });
 });

@@ -128,8 +128,8 @@ pipeline {
                  */
                 dir(env.APP_DIR) {
                     sh '''
-                        command -v trivy
                         trivy fs --severity HIGH,CRITICAL --exit-code 0 . > trivyfs.txt
+                        trivy fs --severity HIGH,CRITICAL --exit-code 0 --format json -o trivyfs.json .
                     '''
                 }
             }
@@ -164,6 +164,7 @@ pipeline {
                 dir(env.APP_DIR) {
                     sh '''
                         trivy image --severity HIGH,CRITICAL --exit-code 0 ${APP_NAME}:${IMAGE_TAG} > trivyimage.txt
+                        trivy image --severity HIGH,CRITICAL --exit-code 0 --format json -o trivyimage.json ${APP_NAME}:${IMAGE_TAG}
                     '''
                 }
             }
@@ -206,6 +207,7 @@ pipeline {
                         kubectl delete -f kubernetes/monitoring/ || true
                         kubectl delete -f kubernetes/ || true
                         kubectl apply -f kubernetes/
+                        kubectl apply -f kubernetes/pipeline-status-configmap.yml
                         kubectl apply -f kubernetes/monitoring/
                         kubectl rollout status deployment/devops-monitoring-portal
                         kubectl rollout status deployment/prometheus
@@ -227,6 +229,10 @@ pipeline {
                         kubectl get pods
                         kubectl get deployments
                         kubectl get svc
+                        READY=$(kubectl get pods -l app=devops-monitoring-portal -o jsonpath='{.items[*].status.conditions[?(@.type=="Ready")].status}' | tr ' ' '\n' | grep -c '^True$' || true)
+                        TOTAL=$(kubectl get pods -l app=devops-monitoring-portal --no-headers 2>/dev/null | wc -l | tr -d ' ')
+                        echo "K8S_PODS_READY=${READY}" > k8s-pods.env
+                        echo "K8S_PODS_TOTAL=${TOTAL}" >> k8s-pods.env
                     '''
                 }
             }
@@ -321,10 +327,44 @@ pipeline {
     post {
         always {
             /*
-             * Save Trivy reports from devops-monitoring-portal/ even if a later stage fails.
-             * Download them from the build's "Artifacts" tab in Jenkins.
+             * Publish pipeline snapshot for the monitoring portal UI (ConfigMap pipeline-status).
+             * Also archive Trivy reports for download from the build Artifacts tab.
              */
-            archiveArtifacts artifacts: "${APP_DIR}/trivyfs.txt,${APP_DIR}/trivyimage.txt", allowEmptyArchive: true
+            script {
+                env.BUILD_RESULT = "${currentBuild.currentResult}"
+                env.BUILD_DURATION_MS = "${currentBuild.duration ?: 0}"
+            }
+            dir(env.APP_DIR) {
+                sh '''
+                    set +e
+                    curl -sf "${BUILD_URL}wfapi/describe" -o /tmp/wfapi.json || echo '{"stages":[]}' > /tmp/wfapi.json
+                    curl -sf "${JENKINS_URL}job/${JOB_NAME}/api/json?tree=builds[number,result,timestamp]{0,10}" -o /tmp/builds.json || echo '{"builds":[]}' > /tmp/builds.json
+
+                    if [ -f k8s-pods.env ]; then . ./k8s-pods.env; fi
+
+                    node scripts/summarize-trivy.js trivyfs.json trivyimage.json > /tmp/trivy-summary.json
+
+                    WFAPI_JSON_PATH=/tmp/wfapi.json \
+                    BUILDS_JSON_PATH=/tmp/builds.json \
+                    TRIVY_SUMMARY_JSON=/tmp/trivy-summary.json \
+                    BUILD_NUMBER="${BUILD_NUMBER}" \
+                    BUILD_URL="${BUILD_URL}" \
+                    JOB_NAME="${JOB_NAME}" \
+                    BUILD_RESULT="${BUILD_RESULT}" \
+                    BUILD_DURATION_MS="${BUILD_DURATION_MS}" \
+                    K8S_PODS_READY="${K8S_PODS_READY:-0}" \
+                    K8S_PODS_TOTAL="${K8S_PODS_TOTAL:-0}" \
+                    APP_VERSION="1.0.0" \
+                    IMAGE_TAG="${IMAGE_TAG}" \
+                    OUTPUT_PATH=data/pipeline-status.json \
+                    node scripts/generate-pipeline-status.js
+
+                    kubectl create configmap pipeline-status \
+                      --from-file=pipeline-status.json=data/pipeline-status.json \
+                      --dry-run=client -o yaml | kubectl apply -f -
+                '''
+            }
+            archiveArtifacts artifacts: "${APP_DIR}/trivyfs.txt,${APP_DIR}/trivyimage.txt,${APP_DIR}/trivyfs.json,${APP_DIR}/trivyimage.json,${APP_DIR}/data/pipeline-status.json", allowEmptyArchive: true
         }
         success {
             echo 'Local DevSecOps pipeline completed successfully.'

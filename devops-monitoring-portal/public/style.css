@@ -157,6 +157,11 @@ body {
   color: var(--danger);
 }
 
+.badge-warning {
+  background: rgba(234, 179, 8, 0.2);
+  color: #eab308;
+}
+
 .section {
   margin-bottom: 2rem;
 }

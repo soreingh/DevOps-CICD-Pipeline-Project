@@ -34,7 +34,7 @@ function getMetricsSnapshot() {
     uptimeSeconds,
     uptimeFormatted: formatUptime(uptimeSeconds),
     health: { value: 1, label: 'Healthy', ok: true },
-    securityScan: { value: 1, label: 'Passed', ok: true },
+    securityScan: store.securityScan,
     requestsTotal: store.requestsTotal,
     deploymentsTotal: store.deploymentsTotal,
     podsReady: store.podsReady,
