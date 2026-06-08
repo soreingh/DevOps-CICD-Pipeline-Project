@@ -2,48 +2,13 @@
 # Secondary LoadBalancer checks for Docker Desktop (localhost). In-cluster tests run earlier.
 set -euo pipefail
 
-export DEBUG_LOG="${DEBUG_LOG:-/Users/luiszara/Documents/DevOps-CICD-Pipeline-Project/.cursor/debug-dfd10b.log}"
-export DEBUG_RUN_ID="${DEBUG_RUN_ID:-verify-local}"
-
 CURL_MAX_TIME="${CURL_MAX_TIME:-2}"
 WAIT_ATTEMPTS="${WAIT_ATTEMPTS:-8}"
 WAIT_SLEEP="${WAIT_SLEEP:-2}"
 
-#region agent log
-debug_log() {
-  local hypothesis_id="$1"
-  local message="$2"
-  local json_data="$3"
-  node -e "
-    const fs = require('fs');
-    const logPath = process.env.DEBUG_LOG;
-    const entry = {
-      sessionId: 'dfd10b',
-      hypothesisId: process.argv[1],
-      location: 'verify-local-access.sh',
-      message: process.argv[2],
-      data: JSON.parse(process.argv[3]),
-      timestamp: Date.now(),
-      runId: process.env.DEBUG_RUN_ID || 'verify-local',
-    };
-    try {
-      fs.mkdirSync(require('path').dirname(logPath), { recursive: true });
-      fs.appendFileSync(logPath, JSON.stringify(entry) + '\n');
-    } catch (e) { /* ignore */ }
-  " "$hypothesis_id" "$message" "$json_data" 2>/dev/null || true
-}
-#endregion
-
 # Docker Desktop publishes LoadBalancer ports on localhost; ingress IPs (172.18.x.x) are not
 # reachable from the Jenkins agent and cause curl to hang without --max-time.
 resolve_host() {
-  local svc="$1"
-  local host ip
-  host=$(kubectl get svc "$svc" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
-  ip=$(kubectl get svc "$svc" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
-  #region agent log
-  debug_log "H1" "lb ingress resolved" "{\"service\":\"${svc}\",\"hostname\":\"${host:-}\",\"ip\":\"${ip:-}\",\"chosenHost\":\"localhost\"}"
-  #endregion
   echo "localhost"
 }
 
@@ -52,21 +17,12 @@ wait_for_url() {
   local pattern="$2"
   local attempt=1
   while [ "$attempt" -le "$WAIT_ATTEMPTS" ]; do
-    #region agent log
-    debug_log "H2" "wait_for_url attempt" "{\"url\":\"${url}\",\"attempt\":${attempt},\"maxAttempts\":${WAIT_ATTEMPTS}}"
-    #endregion
     if curl -sf --max-time "${CURL_MAX_TIME}" "$url" 2>/dev/null | grep -q "$pattern"; then
-      #region agent log
-      debug_log "H3" "wait_for_url success" "{\"url\":\"${url}\",\"attempt\":${attempt}}"
-      #endregion
       return 0
     fi
     sleep "${WAIT_SLEEP}"
     attempt=$((attempt + 1))
   done
-  #region agent log
-  debug_log "H3" "wait_for_url timed out" "{\"url\":\"${url}\",\"attempts\":${WAIT_ATTEMPTS}}"
-  #endregion
   return 1
 }
 
@@ -104,7 +60,3 @@ echo "Access URLs (when LoadBalancer is ready on your Mac):"
 echo "  App:        http://localhost:30080"
 echo "  Prometheus: http://localhost:9091"
 echo "  Grafana:    http://localhost:3030  (login admin/admin)"
-
-#region agent log
-debug_log "H4" "verify local access complete" "{\"appHost\":\"${APP_HOST}\",\"promHost\":\"${PROM_HOST}\",\"grafHost\":\"${GRAF_HOST}\"}"
-#endregion

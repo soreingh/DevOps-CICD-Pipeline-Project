@@ -24,6 +24,7 @@ function sonarQubeLabel(stages) {
   const gate = (process.env.SONAR_QUALITY_GATE || '').toUpperCase();
   if (gate === 'OK' || gate === 'WARN') return 'Passed';
   if (gate === 'ERROR') return 'Failed';
+  if (gate === 'TIMEOUT') return 'Unknown';
   if (gate) return gate;
   return stageScanLabel(stages, 'SonarQube Analysis');
 }
