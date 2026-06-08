@@ -1,4 +1,4 @@
-const http = require('http');
+const http = require('node:http');
 
 const TIMEOUT_MS = 2000;
 

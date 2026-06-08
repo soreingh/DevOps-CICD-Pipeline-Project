@@ -1,40 +1,20 @@
-/*
- * Local DevSecOps CI/CD Pipeline — DevOps Monitoring Portal
- *
- * Scope: macOS laptop (Jenkins, Docker Desktop, Trivy, SonarQube, local Kubernetes).
- * After a successful run, open services on localhost via Docker Desktop LoadBalancer (see post success block).
- *
- * JENKINS JOB SETUP (Choice B — app subfolder):
- *   Pipeline → Definition: Pipeline script from SCM
- *   Script Path: devops-monitoring-portal/Jenkinsfile   <-- NOT the default "Jenkinsfile"
- *
- * Workspace note: Jenkins checks out the full repo to $WORKSPACE (repo root).
- * Build commands run inside dir(APP_DIR) so paths like "src" and "kubernetes/" match this folder.
- */
 pipeline {
     agent any
 
     tools {
-        // Requires NodeJS plugin + global tool named exactly "node20"
         nodejs 'node20'
     }
 
     environment {
-        // Application folder inside the Git repo (relative to $WORKSPACE)
         APP_DIR = 'devops-monitoring-portal'
         APP_NAME = 'devops-monitoring-portal'
         IMAGE_TAG = 'latest'
-        // Cluster node container (Docker Desktop / kind). Its containerd is isolated
-        // from the host Docker daemon, so the built image must be loaded into it.
         K8S_NODE = 'desktop-control-plane'
-        // Requires SonarScanner plugin + global tool named "sonar-scanner"
         SONAR_SCANNER_HOME = tool 'sonar-scanner'
-        // Jenkins launchd agent omits Homebrew; trivy/docker/kubectl live here on macOS
         PATH = "/opt/homebrew/bin:/usr/local/bin:${env.PATH}"
     }
 
     options {
-        // Adds timestamps to console lines — helps when troubleshooting slow stages
         timestamps()
     }
 
@@ -42,35 +22,18 @@ pipeline {
 
         stage('Clean Workspace') {
             steps {
-                /*
-                 * PURPOSE: Remove leftover files from previous builds (node_modules, scan reports, etc.)
-                 * RUNS IN: repo root ($WORKSPACE)
-                 * IF IT FAILS: Install the "Workspace Cleanup" plugin in Jenkins
-                 */
                 cleanWs()
             }
         }
 
         stage('Checkout') {
             steps {
-                /*
-                 * PURPOSE: Pull latest source from GitHub into $WORKSPACE
-                 * RUNS IN: repo root
-                 * IF IT FAILS: Check repo URL, branch name, and Git credentials in the job config
-                 */
                 checkout scm
             }
         }
 
         stage('Install Dependencies') {
             steps {
-                /*
-                 * PURPOSE: Install Node.js packages from package-lock.json (reproducible CI install)
-                 * RUNS IN: devops-monitoring-portal/ (same folder as this Jenkinsfile)
-                 * IF IT FAILS:
-                 *   - Confirm Global Tool "node20" exists (Manage Jenkins → Tools)
-                 *   - Confirm package-lock.json is committed in devops-monitoring-portal/
-                 */
                 dir(env.APP_DIR) {
                     sh 'npm ci'
                 }
@@ -79,11 +42,6 @@ pipeline {
 
         stage('Unit Test') {
             steps {
-                /*
-                 * PURPOSE: Run Jest + Supertest route tests before build/deploy
-                 * RUNS IN: devops-monitoring-portal/
-                 * IF IT FAILS: Read the test names in the console; fix failing routes in src/routes/
-                 */
                 dir(env.APP_DIR) {
                     sh 'npm test'
                 }
@@ -92,14 +50,6 @@ pipeline {
 
         stage('SonarQube Analysis') {
             steps {
-                /*
-                 * PURPOSE: Send code quality results to local SonarQube (http://localhost:9000)
-                 * RUNS IN: devops-monitoring-portal/
-                 * IF IT FAILS:
-                 *   - SonarQube server must be named "sonar-server" (Manage Jenkins → System)
-                 *   - Global tool must be named "sonar-scanner"
-                 *   - SonarQube Docker container must be running
-                 */
                 dir(env.APP_DIR) {
                     withSonarQubeEnv('sonar-server') {
                         sh '''
@@ -117,15 +67,6 @@ pipeline {
 
         stage('Trivy File System Scan') {
             steps {
-                /*
-                 * PURPOSE: Scan source and dependencies for HIGH/CRITICAL vulnerabilities
-                 * RUNS IN: devops-monitoring-portal/
-                 * OUTPUT: trivyfs.txt (archived as a build artifact)
-                 * --exit-code 0: report findings but do NOT fail the pipeline (demo-friendly)
-                 * IF IT FAILS:
-                 *   - Install: brew install trivy
-                 *   - Confirm PATH includes /opt/homebrew/bin (see environment block above)
-                 */
                 dir(env.APP_DIR) {
                     sh '''
                         trivy fs --severity HIGH,CRITICAL --exit-code 0 . > trivyfs.txt
@@ -137,14 +78,6 @@ pipeline {
 
         stage('Docker Build') {
             steps {
-                /*
-                 * PURPOSE: Build the production image used by Kubernetes
-                 * RUNS IN: devops-monitoring-portal/ (where Dockerfile lives)
-                 * IMAGE: devops-monitoring-portal:latest — must match kubernetes/deployment.yml
-                 * IF IT FAILS:
-                 *   - Docker Desktop must be running
-                 *   - Jenkins user must be able to run "docker" (socket / permissions on macOS)
-                 */
                 dir(env.APP_DIR) {
                     sh '''
                         docker build -t ${APP_NAME}:${IMAGE_TAG} .
@@ -155,12 +88,6 @@ pipeline {
 
         stage('Trivy Image Scan') {
             steps {
-                /*
-                 * PURPOSE: Scan the built Docker image for HIGH/CRITICAL vulnerabilities
-                 * RUNS IN: devops-monitoring-portal/
-                 * OUTPUT: trivyimage.txt (archived as a build artifact)
-                 * IF IT FAILS: Docker Build stage must have completed; image must exist locally
-                 */
                 dir(env.APP_DIR) {
                     sh '''
                         trivy image --severity HIGH,CRITICAL --exit-code 0 ${APP_NAME}:${IMAGE_TAG} > trivyimage.txt
@@ -172,17 +99,6 @@ pipeline {
 
         stage('Load Image into Kubernetes Node') {
             steps {
-                /*
-                 * PURPOSE: Make the locally built image visible to the cluster's container runtime.
-                 * WHY: deployment.yml uses imagePullPolicy: Never, so the kubelet only uses images
-                 *      already present in the NODE's containerd. "docker build" puts the image in the
-                 *      HOST Docker daemon, whose store is isolated from the node — without this step
-                 *      pods fail with ErrImageNeverPull and the rollout exceeds its progress deadline.
-                 * RUNS IN: devops-monitoring-portal/
-                 * IF IT FAILS:
-                 *   - Confirm node container name: "docker exec ${K8S_NODE} echo ok"
-                 *   - For a kind cluster you can alternatively use: kind load docker-image
-                 */
                 sh '''
                     docker save ${APP_NAME}:${IMAGE_TAG} | docker exec -i ${K8S_NODE} ctr -n k8s.io images import -
                 '''
@@ -191,17 +107,6 @@ pipeline {
 
         stage('Deploy to Local Kubernetes') {
             steps {
-                /*
-                 * PURPOSE: Deploy app + Prometheus/Grafana monitoring stack to Docker Desktop Kubernetes
-                 * RUNS IN: devops-monitoring-portal/
-                 * NOTE: delete before apply causes brief downtime — fine for local demos
-                 * imagePullPolicy: Never on the app requires the image loaded into the node above
-                 * Monitoring images (prom/prometheus, grafana/grafana) pull from Docker Hub on first run
-                 * IF IT FAILS:
-                 *   - Enable Kubernetes in Docker Desktop
-                 *   - kubectl config current-context should be "docker-desktop"
-                 *   - Run "kubectl get nodes" as the Jenkins user
-                 */
                 dir(env.APP_DIR) {
                     sh '''
                         kubectl delete -f kubernetes/monitoring/ || true
@@ -219,11 +124,6 @@ pipeline {
 
         stage('Verify Deployment') {
             steps {
-                /*
-                 * PURPOSE: Show cluster state in the Jenkins console for quick visual check
-                 * RUNS IN: devops-monitoring-portal/
-                 * IF PODS NOT READY: run "kubectl describe pod <name>" and check /health probes
-                 */
                 dir(env.APP_DIR) {
                     sh '''
                         kubectl get pods
@@ -240,13 +140,6 @@ pipeline {
 
         stage('Smoke Test') {
             steps {
-                /*
-                 * PURPOSE: Confirm the app responds after deploy (in-cluster check)
-                 * NOTE: LoadBalancer exposes the app at http://localhost:30080 after deploy on Docker Desktop
-                 * IF IT FAILS:
-                 *   - Check pods are Running: kubectl get pods -l app=devops-monitoring-portal
-                 *   - Check /health inside a pod: kubectl exec <pod> -- wget -qO- http://localhost:3000/health
-                 */
                 sh '''
                     POD=$(kubectl get pod -l app=devops-monitoring-portal -o jsonpath='{.items[0].metadata.name}')
                     kubectl exec "$POD" -- wget -qO- http://localhost:3000/health | grep -q '"status":"healthy"'
@@ -257,14 +150,6 @@ pipeline {
 
         stage('Verify Monitoring') {
             steps {
-                /*
-                 * PURPOSE: Confirm Prometheus scrapes app metrics and Grafana is healthy
-                 * RUNS IN: repo root (kubectl exec into cluster pods)
-                 * IF IT FAILS:
-                 *   - kubectl get pods -l app=prometheus
-                 *   - kubectl logs deploy/prometheus
-                 *   - Confirm devops-monitoring-portal-service resolves inside the cluster
-                 */
                 sh '''
                     kubectl exec deploy/prometheus -- wget -qO- \
                         'http://localhost:9090/api/v1/query?query=app_uptime_seconds' \
@@ -280,12 +165,6 @@ pipeline {
 
         stage('Verify Local Access') {
             steps {
-                /*
-                 * PURPOSE: Confirm services are reachable after deploy (LoadBalancer or in-cluster fallback).
-                 * NOTE: Jenkins launchd agents often cannot reach localhost:30080 even when the app is healthy
-                 *       in-cluster (Smoke Test already passed). We try localhost + EXTERNAL-IP, then fall back
-                 *       to in-cluster checks so the pipeline does not fail on Mac LB timing/network quirks.
-                 */
                 sh '''
                     set +e
 
@@ -376,10 +255,6 @@ pipeline {
 
     post {
         always {
-            /*
-             * Publish pipeline snapshot for the monitoring portal UI (ConfigMap pipeline-status).
-             * Also archive Trivy reports for download from the build Artifacts tab.
-             */
             script {
                 env.BUILD_RESULT = "${currentBuild.currentResult}"
                 env.BUILD_DURATION_MS = "${currentBuild.duration ?: 0}"

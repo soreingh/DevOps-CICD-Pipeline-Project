@@ -3,7 +3,7 @@
  * Exported separately from server.js so Jest/Supertest can test routes
  * without starting an HTTP listener on port 3000.
  */
-const path = require('path');
+const path = require('node:path');
 const express = require('express');
 
 const app = express();

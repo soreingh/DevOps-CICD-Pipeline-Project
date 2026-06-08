@@ -1,5 +1,5 @@
-const fs = require('fs');
-const path = require('path');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const STATUS_PATH =
   process.env.PIPELINE_STATUS_PATH ||
@@ -50,7 +50,7 @@ function mapDeployResult(status) {
   return status || 'Unknown';
 }
 
-function securityAggregate(status) {
+function securityAggregate() {
   const { security } = loadPipelineStatus();
   const values = [security.trivyFilesystem, security.trivyImage, security.sonarQube];
   if (values.some((v) => v === 'Failed')) return 'Failed';
@@ -59,29 +59,58 @@ function securityAggregate(status) {
   return 'Unknown';
 }
 
+function resolveLastDeployment(data) {
+  const deployStage = data.stages.find((s) => s.name === 'Deploy to Local Kubernetes');
+  if (deployStage) {
+    return mapDeployResult(deployStage.status);
+  }
+  if (data._missing) {
+    return 'No pipeline data yet';
+  }
+  return 'Unknown';
+}
+
+function resolveApplicationStatus(data, appHealthy) {
+  if (appHealthy) return 'Healthy';
+  if (data._missing) return 'Unknown';
+  return 'Degraded';
+}
+
+function formatCurrentVersion(data) {
+  const version = `v${data.version}`;
+  if (!data.buildNumber) {
+    return version;
+  }
+  const buildSuffix = `(build #${data.buildNumber})`;
+  return `${version} ${buildSuffix}`;
+}
+
+function resolveDockerStatus(data) {
+  const dockerStage = data.stages.find((s) => s.name === 'Docker Build');
+  if (dockerStage?.status === 'SUCCESS') {
+    return 'Running';
+  }
+  if (data._missing) {
+    return 'Unknown';
+  }
+  if (!dockerStage) {
+    return 'Not run';
+  }
+  return 'Stopped';
+}
+
 function getDashboardCards() {
   const data = loadPipelineStatus();
-  const deployStage = data.stages.find((s) => s.name === 'Deploy to Local Kubernetes');
-  const lastDeployment = deployStage
-    ? mapDeployResult(deployStage.status)
-    : data._missing
-      ? 'No pipeline data yet'
-      : 'Unknown';
-
   const appHealthy = data.kubernetes.podsReady > 0 && data.kubernetes.status === 'Healthy';
 
   return {
-    applicationStatus: appHealthy ? 'Healthy' : data._missing ? 'Unknown' : 'Degraded',
-    currentVersion: `v${data.version}${data.buildNumber ? ` (build #${data.buildNumber})` : ''}`,
+    applicationStatus: resolveApplicationStatus(data, appHealthy),
+    currentVersion: formatCurrentVersion(data),
     environment: 'Local Kubernetes',
-    lastDeployment,
+    lastDeployment: resolveLastDeployment(data),
     securityScanStatus: securityAggregate(),
     jenkinsStatus: data._missing ? 'Unknown' : 'Online',
-    dockerStatus: data.stages.find((s) => s.name === 'Docker Build')?.status === 'SUCCESS'
-      ? 'Running'
-      : data._missing
-        ? 'Unknown'
-        : 'Unknown',
+    dockerStatus: resolveDockerStatus(data),
     kubernetesStatus: data.kubernetes.status,
     buildNumber: data.buildNumber,
     lastPipelineAt: data.timestamp || 'Never',
@@ -105,18 +134,20 @@ function getSecuritySummary() {
 
 function getBuildHistory() {
   const data = loadPipelineStatus();
-  return data.buildHistory.length > 0
-    ? data.buildHistory
-    : data.buildNumber
-      ? [
-          {
-            number: data.buildNumber,
-            status: mapDeployResult(data.result),
-            description: data.jobName || 'Latest pipeline run',
-            timestamp: data.timestamp,
-          },
-        ]
-      : [];
+  if (data.buildHistory.length > 0) {
+    return data.buildHistory;
+  }
+  if (!data.buildNumber) {
+    return [];
+  }
+  return [
+    {
+      number: data.buildNumber,
+      status: mapDeployResult(data.result),
+      description: data.jobName || 'Latest pipeline run',
+      timestamp: data.timestamp,
+    },
+  ];
 }
 
 function getKubernetesSnapshot() {
