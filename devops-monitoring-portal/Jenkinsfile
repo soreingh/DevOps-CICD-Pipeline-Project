@@ -37,17 +37,7 @@ pipeline {
         stage('Preflight') {
             steps {
                 dir(env.APP_DIR) {
-                    sh '''
-                        chmod +x scripts/preflight.sh
-                        export DEBUG_LOG="${WORKSPACE}/.cursor/debug-dfd10b.log"
-                        export DEBUG_RUN_ID="jenkins-${BUILD_NUMBER}"
-                        mkdir -p "$(dirname "${DEBUG_LOG}")"
-                        K8S_NODE=${K8S_NODE} ./scripts/preflight.sh || {
-                          echo "--- Preflight debug log (last 20 lines) ---"
-                          tail -20 "${DEBUG_LOG}" 2>/dev/null || true
-                          exit 1
-                        }
-                    '''
+                    sh 'chmod +x scripts/preflight.sh && K8S_NODE=${K8S_NODE} ./scripts/preflight.sh'
                 }
             }
         }
