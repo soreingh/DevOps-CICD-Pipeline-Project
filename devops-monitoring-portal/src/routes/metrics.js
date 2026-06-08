@@ -1,12 +1,9 @@
 const express = require('express');
+const { version: appVersion } = require('../../package.json');
 const { getSnapshot: getStoreSnapshot } = require('../metrics/store');
+const { wantsHtmlPage } = require('../utils/contentNegotiation');
 
 const router = express.Router();
-
-/** Browsers send Accept: text/html; Prometheus scrapers do not. */
-function wantsHtmlPage(req) {
-  return (req.get('Accept') || '').includes('text/html');
-}
 
 function formatUptime(seconds) {
   if (seconds < 60) return `${seconds}s`;
@@ -30,7 +27,7 @@ function getMetricsSnapshot() {
 
   return {
     service: 'devops-monitoring-portal',
-    version: '1.0.0',
+    version: appVersion,
     uptimeSeconds,
     uptimeFormatted: formatUptime(uptimeSeconds),
     health: { value: 1, label: 'Healthy', ok: true },
@@ -66,6 +63,9 @@ function buildMetricsText(snapshot = getMetricsSnapshot()) {
     '# HELP app_kubernetes_pods_ready Ready pods in local cluster demo',
     '# TYPE app_kubernetes_pods_ready gauge',
     `app_kubernetes_pods_ready ${snapshot.podsReady}`,
+    '# HELP app_kubernetes_pods_total Total pods in local cluster demo',
+    '# TYPE app_kubernetes_pods_total gauge',
+    `app_kubernetes_pods_total ${snapshot.podsTotal}`,
     '# HELP app_uptime_seconds Process uptime in seconds',
     '# TYPE app_uptime_seconds gauge',
     `app_uptime_seconds ${snapshot.uptimeSeconds}`,

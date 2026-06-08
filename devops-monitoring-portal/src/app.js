@@ -5,8 +5,11 @@
  */
 const path = require('node:path');
 const express = require('express');
+const helmet = require('helmet');
 
 const app = express();
+
+app.use(helmet({ contentSecurityPolicy: false }));
 
 // EJS renders HTML dashboards; views live outside src/
 app.set('view engine', 'ejs');
@@ -25,5 +28,13 @@ app.use('/metrics', require('./routes/metrics'));
 app.use('/security', require('./routes/security'));
 app.use('/deployments', require('./routes/deployments'));
 app.use('/api', require('./routes/api'));
+
+app.use((err, req, res, next) => {
+  console.error('Unhandled error:', err);
+  if (req.path.startsWith('/api')) {
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+  res.status(500).send('Internal Server Error');
+});
 
 module.exports = app;

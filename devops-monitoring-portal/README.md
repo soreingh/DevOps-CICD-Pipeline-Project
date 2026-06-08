@@ -123,6 +123,8 @@ Tests cover the dashboard, health, metrics, security, and deployments routes wit
 
 ## Docker Build and Run
 
+The Dockerfile uses `node:20-alpine`, `npm ci --omit=dev`, layer caching (`package*.json` before source), a non-root `app` user, and `CMD ["node", "src/server.js"]` for proper SIGTERM handling. `.dockerignore` excludes `kubernetes/`, `tests/`, `scripts/`, and scan artifacts to keep the build context small.
+
 Build the image:
 
 ```bash
@@ -132,7 +134,7 @@ docker build -t devops-monitoring-portal:latest .
 Run the container:
 
 ```bash
-docker run --rm -p 3000:3000 devops-monitoring-portal:latest
+docker run --rm -p 3000:3000 -e NODE_ENV=production devops-monitoring-portal:latest
 ```
 
 Verify health:
@@ -260,9 +262,11 @@ curl http://localhost:30080/health
 
 The Jenkins **Verify Local Access** stage runs these checks automatically after each pipeline run.
 
-### Trivy report encoding
+### Trivy scans (report-only for local demo)
 
-Trivy table output uses UTF-8 box-drawing characters. If archived reports show garbled text like `â"‚`, open the file as **UTF-8** in your editor, or use `--format json` for artifacts.
+Trivy runs with `--exit-code 0` so HIGH/CRITICAL findings are **archived but do not fail the build**. This keeps the portfolio pipeline runnable on a Mac without chasing every base-image CVE. In production you would use `--exit-code 1`, Trivy policies, or a vulnerability management workflow instead.
+
+Filesystem scans run **before** `npm ci` and skip `node_modules`, `coverage`, `.git`, `kubernetes`, `scripts`, and `data` so scans stay fast and focused on application source. Each scan writes JSON once; `scripts/format-trivy-report.js` generates the human-readable `.txt` artifact.
 
 ## Jenkins Pipeline
 
@@ -290,25 +294,47 @@ If Script Path is left as the default `Jenkinsfile`, Jenkins will not find the p
 6. **Docker Desktop:** Kubernetes enabled; context `docker-desktop`
 7. **Monitoring images:** Docker Hub reachable for `prom/prometheus` and `grafana/grafana` on first deploy
 
+### Pipeline options
+
+- **`disableConcurrentBuilds()`** — prevents overlapping deploys to the same local cluster
+- **`buildDiscarder`** — keeps the last 20 builds (10 with artifacts)
+- **`timeout(45 minutes)`** — avoids hung rollouts blocking the agent indefinitely
+
+### Image tagging
+
+Docker images are tagged with **`${BUILD_NUMBER}`** (traceable) and **`latest`** (convenience). The deployment is updated with `kubectl set image` each build. `imagePullPolicy: Never` keeps the local Docker Desktop workflow working without a registry.
+
+**Production alternative:** push to ECR/GCR/ACR, use immutable digests or semver tags, and set `imagePullPolicy: IfNotPresent` or `Always`.
+
 ### Pipeline stages
 
 | Stage | What it does |
 |-------|----------------|
 | Clean Workspace | Remove files from previous builds |
 | Checkout | Clone latest code from GitHub |
+| Preflight | Verify `docker`, `kubectl`, `trivy`, `node`, and `desktop-control-plane` are available |
+| Trivy File System Scan | Vulnerability scan (before `npm ci`) → `trivyfs.json` + `trivyfs.txt` |
 | Install Dependencies | `npm ci` |
 | Unit Test | `npm test` (Jest/Supertest) |
 | SonarQube Analysis | Code quality scan → local SonarQube |
-| Trivy File System Scan | Vulnerability scan → `trivyfs.txt` + `trivyfs.json` |
-| Docker Build | `docker build -t devops-monitoring-portal:latest .` |
-| Trivy Image Scan | Image scan → `trivyimage.txt` + `trivyimage.json` |
-| Load Image into Kubernetes Node | Import image into cluster node containerd |
-| Deploy to Local Kubernetes | Apply app + monitoring manifests |
+| SonarQube Quality Gate | Optional `waitForQualityGate` (marks build UNSTABLE if gate fails; does not abort) |
+| Docker Build | `docker build` with tags `${BUILD_NUMBER}` and `latest` |
+| Trivy Image Scan | Image scan → `trivyimage.json` + `trivyimage.txt` |
+| Load Image into Kubernetes Node | Import `${BUILD_NUMBER}` image into cluster node containerd |
+| Deploy to Local Kubernetes | `kubectl apply` + `kubectl set image` rolling update (no delete/recreate) |
 | Verify Deployment | `kubectl get pods/deployments/svc` |
-| Smoke Test | In-cluster `/health` check via `kubectl exec` |
-| Verify Monitoring | Prometheus query + Grafana health check |
-| Verify Local Access | Confirms http://localhost:30080, :9091, :3030 respond (LoadBalancer) |
-| post always | Publishes `pipeline-status.json` to ConfigMap; archives Trivy + status artifacts |
+| Smoke Test | In-cluster `/health` via `scripts/smoke-k8s.sh` (`kubectl wait` + `kubectl exec`) |
+| Verify Monitoring | Prometheus query + Grafana health check (in-cluster) |
+| Verify Local Access | Secondary LoadBalancer checks for localhost URLs (warns if LB is slow) |
+| post always | Publishes `pipeline-status.json` to ConfigMap, restarts app pods, archives Trivy artifacts |
+
+### SonarQube Quality Gate (optional)
+
+The **SonarQube Quality Gate** stage calls `waitForQualityGate` inside `catchError` so a missing Jenkins webhook or local SonarQube misconfiguration does not break the demo pipeline. To enable real gate enforcement:
+
+1. In SonarQube → Project → Webhooks, add your Jenkins URL (e.g. `http://localhost:8080/sonarqube-webhook/`)
+2. In Jenkins → Configure System → SonarQube servers, enable **Trigger analysis on build** / webhook integration
+3. For production CI, set `abortPipeline: true` in the Quality Gate stage
 
 After a successful build, open the localhost URLs above. Dashboard/security/deployments pages show data from that build.
 
@@ -321,9 +347,9 @@ After a successful build, open the localhost URLs above. Dashboard/security/depl
 | **SonarQube** | Scan `src/`; security page shows SonarQube stage pass/fail from snapshot |
 | **Trivy FS scan** | Scan project directory; security page shows real HIGH/CRITICAL counts from Trivy JSON |
 | **Docker build** | `docker build` using included Dockerfile |
-| **Trivy image scan** | Scan `devops-monitoring-portal:latest` after build |
-| **Deploy to K8s** | `kubectl apply` app + `kubernetes/monitoring/` — 2 app replicas with `/health` probes |
-| **Smoke test** | In-cluster `/health` via `kubectl exec` |
+| **Trivy image scan** | Scan `devops-monitoring-portal:${BUILD_NUMBER}` after build |
+| **Deploy to K8s** | `kubectl apply` + `set image` rolling update — 2 app replicas with lightweight `/health` probes |
+| **Smoke test** | In-cluster `/health` via `scripts/smoke-k8s.sh` (`kubectl wait` then `kubectl exec`) |
 | **Verify Monitoring** | Prometheus `app_uptime_seconds` query + Grafana `/api/health` |
 | **post always** | Publishes pipeline snapshot ConfigMap consumed by dashboard, security, deployments |
 | **Observability** | Prometheus scrapes live `/metrics`; Grafana dashboard charts uptime, health, request rate |

@@ -5,7 +5,7 @@
  * Env:
  *   BUILD_NUMBER, BUILD_URL, JOB_NAME, BUILD_RESULT, BUILD_DURATION_MS
  *   WFAPI_JSON_PATH, BUILDS_JSON_PATH, TRIVY_SUMMARY_JSON
- *   K8S_PODS_READY, K8S_PODS_TOTAL, APP_VERSION, IMAGE_TAG
+ *   K8S_PODS_READY, K8S_PODS_TOTAL, APP_VERSION, IMAGE_TAG, SONAR_QUALITY_GATE
  *   OUTPUT_PATH (default: data/pipeline-status.json)
  */
 const fs = require('fs');
@@ -18,6 +18,14 @@ function readJson(filePath, fallback = {}) {
   } catch {
     return fallback;
   }
+}
+
+function sonarQubeLabel(stages) {
+  const gate = (process.env.SONAR_QUALITY_GATE || '').toUpperCase();
+  if (gate === 'OK') return 'Passed';
+  if (gate === 'ERROR') return 'Failed';
+  if (gate) return gate;
+  return stageScanLabel(stages, 'SonarQube Analysis');
 }
 
 function stageScanLabel(stages, stageName) {
@@ -97,7 +105,7 @@ const output = {
   security: {
     trivyFilesystem: stageScanLabel(stages, 'Trivy File System Scan'),
     trivyImage: stageScanLabel(stages, 'Trivy Image Scan'),
-    sonarQube: stageScanLabel(stages, 'SonarQube Analysis'),
+    sonarQube: sonarQubeLabel(stages),
     vulnerabilities: {
       critical: trivySummary.critical || 0,
       high: trivySummary.high || 0,

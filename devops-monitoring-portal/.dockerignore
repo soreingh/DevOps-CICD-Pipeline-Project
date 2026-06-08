@@ -6,3 +6,10 @@ README.md
 tests
 coverage
 .env
+kubernetes
+Jenkinsfile
+scripts
+data
+trivy*
+*.md
+.github

@@ -8,7 +8,6 @@ pipeline {
     environment {
         APP_DIR = 'devops-monitoring-portal'
         APP_NAME = 'devops-monitoring-portal'
-        IMAGE_TAG = 'latest'
         K8S_NODE = 'desktop-control-plane'
         SONAR_SCANNER_HOME = tool 'sonar-scanner'
         PATH = "/opt/homebrew/bin:/usr/local/bin:${env.PATH}"
@@ -16,6 +15,9 @@ pipeline {
 
     options {
         timestamps()
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '20', artifactNumToKeepStr: '10'))
+        timeout(time: 45, unit: 'MINUTES')
     }
 
     stages {
@@ -29,6 +31,27 @@ pipeline {
         stage('Checkout') {
             steps {
                 checkout scm
+            }
+        }
+
+        stage('Preflight') {
+            steps {
+                dir(env.APP_DIR) {
+                    sh 'chmod +x scripts/preflight.sh && K8S_NODE=${K8S_NODE} ./scripts/preflight.sh'
+                }
+            }
+        }
+
+        stage('Trivy File System Scan') {
+            steps {
+                dir(env.APP_DIR) {
+                    sh '''
+                        trivy fs --severity HIGH,CRITICAL --exit-code 0 \
+                          --skip-dirs node_modules,coverage,.git,kubernetes,scripts,data \
+                          --format json -o trivyfs.json .
+                        node scripts/format-trivy-report.js trivyfs.json > trivyfs.txt
+                    '''
+                }
             }
         }
 
@@ -65,13 +88,16 @@ pipeline {
             }
         }
 
-        stage('Trivy File System Scan') {
+        stage('SonarQube Quality Gate') {
             steps {
-                dir(env.APP_DIR) {
-                    sh '''
-                        trivy fs --severity HIGH,CRITICAL --exit-code 0 . > trivyfs.txt
-                        trivy fs --severity HIGH,CRITICAL --exit-code 0 --format json -o trivyfs.json .
-                    '''
+                catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                    timeout(time: 5, unit: 'MINUTES') {
+                        script {
+                            def qg = waitForQualityGate abortPipeline: false
+                            env.SONAR_QUALITY_GATE = qg.status
+                            echo "SonarQube quality gate status: ${qg.status}"
+                        }
+                    }
                 }
             }
         }
@@ -80,7 +106,10 @@ pipeline {
             steps {
                 dir(env.APP_DIR) {
                     sh '''
-                        docker build -t ${APP_NAME}:${IMAGE_TAG} .
+                        docker build \
+                          -t ${APP_NAME}:${BUILD_NUMBER} \
+                          -t ${APP_NAME}:latest \
+                          .
                     '''
                 }
             }
@@ -90,8 +119,9 @@ pipeline {
             steps {
                 dir(env.APP_DIR) {
                     sh '''
-                        trivy image --severity HIGH,CRITICAL --exit-code 0 ${APP_NAME}:${IMAGE_TAG} > trivyimage.txt
-                        trivy image --severity HIGH,CRITICAL --exit-code 0 --format json -o trivyimage.json ${APP_NAME}:${IMAGE_TAG}
+                        trivy image --severity HIGH,CRITICAL --exit-code 0 \
+                          --format json -o trivyimage.json ${APP_NAME}:${BUILD_NUMBER}
+                        node scripts/format-trivy-report.js trivyimage.json > trivyimage.txt
                     '''
                 }
             }
@@ -100,7 +130,7 @@ pipeline {
         stage('Load Image into Kubernetes Node') {
             steps {
                 sh '''
-                    docker save ${APP_NAME}:${IMAGE_TAG} | docker exec -i ${K8S_NODE} ctr -n k8s.io images import -
+                    docker save ${APP_NAME}:${BUILD_NUMBER} | docker exec -i ${K8S_NODE} ctr -n k8s.io images import -
                 '''
             }
         }
@@ -109,14 +139,13 @@ pipeline {
             steps {
                 dir(env.APP_DIR) {
                     sh '''
-                        kubectl delete -f kubernetes/monitoring/ || true
-                        kubectl delete -f kubernetes/ || true
                         kubectl apply -f kubernetes/
-                        kubectl apply -f kubernetes/pipeline-status-configmap.yml
                         kubectl apply -f kubernetes/monitoring/
-                        kubectl rollout status deployment/devops-monitoring-portal
-                        kubectl rollout status deployment/prometheus
-                        kubectl rollout status deployment/grafana
+                        kubectl set image deployment/devops-monitoring-portal \
+                          devops-monitoring-portal=${APP_NAME}:${BUILD_NUMBER}
+                        kubectl rollout status deployment/devops-monitoring-portal --timeout=5m
+                        kubectl rollout status deployment/prometheus --timeout=5m
+                        kubectl rollout status deployment/grafana --timeout=5m
                     '''
                 }
             }
@@ -140,17 +169,18 @@ pipeline {
 
         stage('Smoke Test') {
             steps {
-                sh '''
-                    POD=$(kubectl get pod -l app=devops-monitoring-portal -o jsonpath='{.items[0].metadata.name}')
-                    kubectl exec "$POD" -- wget -qO- http://localhost:3000/health | grep -q '"status":"healthy"'
-                    echo "Smoke test passed: /health returned healthy"
-                '''
+                dir(env.APP_DIR) {
+                    sh 'chmod +x scripts/smoke-k8s.sh && ./scripts/smoke-k8s.sh'
+                }
             }
         }
 
         stage('Verify Monitoring') {
             steps {
                 sh '''
+                    kubectl wait --for=condition=available deployment/prometheus --timeout=120s
+                    kubectl wait --for=condition=available deployment/grafana --timeout=120s
+
                     kubectl exec deploy/prometheus -- wget -qO- \
                         'http://localhost:9090/api/v1/query?query=app_uptime_seconds' \
                         | grep -q '"status":"success"'
@@ -193,7 +223,7 @@ pipeline {
                     PROM_HOST=$(lb_host prometheus-service)
                     GRAF_HOST=$(lb_host grafana-service)
 
-                    echo "Checking app at http://${APP_HOST}:30080/health (and localhost fallback)..."
+                    echo "Checking app at http://${APP_HOST}:30080/health (LoadBalancer; in-cluster already verified)..."
                     APP_LB_OK=0
                     if wait_for_url "http://${APP_HOST}:30080/health" '"status":"healthy"'; then
                       APP_LB_OK=1
@@ -203,11 +233,8 @@ pipeline {
                     fi
 
                     if [ "$APP_LB_OK" -eq 0 ]; then
-                      echo "WARN: LoadBalancer not reachable from Jenkins agent; verifying in-cluster..."
-                      POD=$(kubectl get pod -l app=devops-monitoring-portal -o jsonpath='{.items[0].metadata.name}')
-                      kubectl exec "$POD" -- wget -qO- http://localhost:3000/health | grep -q '"status":"healthy"' \
-                        || { echo "ERROR: App not healthy in-cluster"; exit 1; }
-                      echo "In-cluster app health OK. Browse via http://localhost:30080 or port-forward if LB is slow."
+                      echo "WARN: LoadBalancer not reachable from Jenkins agent (Docker Desktop may still be assigning an endpoint)."
+                      echo "In-cluster smoke test already passed — browse http://localhost:30080 when the LB is ready."
                     else
                       echo "App LoadBalancer reachable at http://${APP_HOST}:30080"
                     fi
@@ -269,6 +296,8 @@ pipeline {
 
                     node scripts/summarize-trivy.js trivyfs.json trivyimage.json > /tmp/trivy-summary.json
 
+                    APP_VERSION=$(node -p "require('./package.json').version")
+
                     WFAPI_JSON_PATH=/tmp/wfapi.json \
                     BUILDS_JSON_PATH=/tmp/builds.json \
                     TRIVY_SUMMARY_JSON=/tmp/trivy-summary.json \
@@ -279,14 +308,18 @@ pipeline {
                     BUILD_DURATION_MS="${BUILD_DURATION_MS}" \
                     K8S_PODS_READY="${K8S_PODS_READY:-0}" \
                     K8S_PODS_TOTAL="${K8S_PODS_TOTAL:-0}" \
-                    APP_VERSION="1.0.0" \
-                    IMAGE_TAG="${IMAGE_TAG}" \
+                    APP_VERSION="${APP_VERSION}" \
+                    IMAGE_TAG="${BUILD_NUMBER}" \
+                    SONAR_QUALITY_GATE="${SONAR_QUALITY_GATE:-}" \
                     OUTPUT_PATH=data/pipeline-status.json \
                     node scripts/generate-pipeline-status.js
 
                     kubectl create configmap pipeline-status \
                       --from-file=pipeline-status.json=data/pipeline-status.json \
                       --dry-run=client -o yaml | kubectl apply -f -
+
+                    kubectl rollout restart deployment/devops-monitoring-portal
+                    kubectl rollout status deployment/devops-monitoring-portal --timeout=5m || true
                 '''
             }
             archiveArtifacts artifacts: "${APP_DIR}/trivyfs.txt,${APP_DIR}/trivyimage.txt,${APP_DIR}/trivyfs.json,${APP_DIR}/trivyimage.json,${APP_DIR}/data/pipeline-status.json", allowEmptyArchive: true
@@ -300,7 +333,12 @@ pipeline {
         failure {
             echo "Pipeline failed (result: ${currentBuild.result}). Check the stage above that returned a non-zero exit code."
             echo 'Archived Trivy reports are under this build Artifacts tab (trivyfs.txt, trivyimage.txt).'
-            echo 'Common fixes: Script Path, node20 tool, sonar-server, docker/kubectl/trivy PATH, smoke test via kubectl exec.'
+            echo 'Troubleshooting:'
+            echo '  - Preflight: docker info, kubectl cluster-info, trivy --version'
+            echo '  - K8s node:  docker ps --filter name=desktop-control-plane'
+            echo '  - Jenkins:   node20 tool, sonar-server credential, Script Path to this Jenkinsfile'
+            echo '  - Smoke:     kubectl get pods -l app=devops-monitoring-portal'
+            echo 'See README.md for full local setup steps.'
         }
     }
 }

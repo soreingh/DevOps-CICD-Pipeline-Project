@@ -50,8 +50,8 @@ function mapDeployResult(status) {
   return status || 'Unknown';
 }
 
-function securityAggregate() {
-  const { security } = loadPipelineStatus();
+function securityAggregate(data) {
+  const { security } = data || loadPipelineStatus();
   const values = [security.trivyFilesystem, security.trivyImage, security.sonarQube];
   if (values.some((v) => v === 'Failed')) return 'Failed';
   if (values.every((v) => v === 'Passed')) return 'Passed';
@@ -155,8 +155,8 @@ function getKubernetesSnapshot() {
   return data.kubernetes;
 }
 
-function getSecurityScanMetric() {
-  const status = securityAggregate();
+function getSecurityScanMetric(data) {
+  const status = securityAggregate(data);
   return {
     value: status === 'Passed' ? 1 : 0,
     label: status,

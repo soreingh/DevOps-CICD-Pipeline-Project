@@ -5,7 +5,6 @@
 
 const {
   loadPipelineStatus,
-  getKubernetesSnapshot,
   getSecurityScanMetric,
 } = require('../services/pipelineStatus');
 
@@ -16,15 +15,15 @@ function incrementRequests() {
 }
 
 function getSnapshot() {
-  const pipeline = loadPipelineStatus();
-  const k8s = getKubernetesSnapshot();
+  const data = loadPipelineStatus();
+  const k8s = data.kubernetes;
 
   return {
     requestsTotal,
-    deploymentsTotal: pipeline.buildNumber || 1,
+    deploymentsTotal: data.buildNumber || 1,
     podsReady: k8s.podsReady,
     podsTotal: k8s.podsTotal,
-    securityScan: getSecurityScanMetric(),
+    securityScan: getSecurityScanMetric(data),
   };
 }
 

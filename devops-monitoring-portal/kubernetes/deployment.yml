@@ -14,6 +14,11 @@ spec:
       labels:
         app: devops-monitoring-portal
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
       containers:
         - name: devops-monitoring-portal
           image: devops-monitoring-portal:latest
@@ -22,8 +27,17 @@ spec:
           ports:
             - containerPort: 3000
           env:
+            - name: NODE_ENV
+              value: production
             - name: PIPELINE_STATUS_PATH
               value: /data/pipeline-status.json
+          resources:
+            requests:
+              memory: 64Mi
+              cpu: 50m
+            limits:
+              memory: 128Mi
+              cpu: 200m
           volumeMounts:
             - name: pipeline-status
               mountPath: /data
@@ -34,12 +48,14 @@ spec:
               port: 3000
             initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 3
           livenessProbe:
             httpGet:
               path: /health
               port: 3000
             initialDelaySeconds: 15
             periodSeconds: 20
+            timeoutSeconds: 3
       volumes:
         - name: pipeline-status
           configMap:
