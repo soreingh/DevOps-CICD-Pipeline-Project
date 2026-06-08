@@ -330,11 +330,17 @@ Docker images are tagged with **`${BUILD_NUMBER}`** (traceable) and **`latest`**
 
 ### SonarQube Quality Gate (optional)
 
-The **SonarQube Quality Gate** stage calls `waitForQualityGate` inside `catchError` so a missing Jenkins webhook or local SonarQube misconfiguration does not break the demo pipeline. To enable real gate enforcement:
+The **SonarQube Quality Gate** stage calls `waitForQualityGate` inside `catchError` so a failed gate marks the build **UNSTABLE** but does not abort the demo pipeline.
+
+**Why it can take 1–3 minutes:** Jenkins polls SonarQube until the background CE task leaves `IN_PROGRESS`. That wait is normal on a local SonarQube instance. A **webhook** notifies Jenkins as soon as analysis finishes (faster, not required for the demo).
+
+**Why the step may show `false`:** That means the quality gate status was not `OK` (often `ERROR` on first runs — e.g. coverage or new-code rules). Open `http://localhost:9000/dashboard?id=devops-monitoring-portal` for details. Unit tests now publish `coverage/lcov.info` to SonarQube to improve gate results.
+
+To tighten enforcement for production:
 
 1. In SonarQube → Project → Webhooks, add your Jenkins URL (e.g. `http://localhost:8080/sonarqube-webhook/`)
-2. In Jenkins → Configure System → SonarQube servers, enable **Trigger analysis on build** / webhook integration
-3. For production CI, set `abortPipeline: true` in the Quality Gate stage
+2. In Jenkins → Configure System → SonarQube servers, enable webhook integration
+3. Set `abortPipeline: true` in the Quality Gate stage
 
 After a successful build, open the localhost URLs above. Dashboard/security/deployments pages show data from that build.
 
