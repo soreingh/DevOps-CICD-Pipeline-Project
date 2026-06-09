@@ -9,7 +9,27 @@ const helmet = require('helmet');
 
 const app = express();
 
-app.use(helmet({ contentSecurityPolicy: false }));
+// Restrictive CSP for server-rendered pages; inline styles only for metrics bar widths in EJS.
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        'default-src': ["'self'"],
+        'style-src': ["'self'", "'unsafe-inline'"],
+        'script-src': ["'self'"],
+        'img-src': ["'self'", 'data:'],
+        'connect-src': ["'self'"],
+        'font-src': ["'self'"],
+        'object-src': ["'none'"],
+        'frame-src': ["'none'"],
+        'base-uri': ["'self'"],
+        'form-action': ["'self'"],
+        'frame-ancestors': ["'none'"],
+      },
+    },
+  }),
+);
 
 // EJS renders HTML dashboards; views live outside src/
 app.set('view engine', 'ejs');

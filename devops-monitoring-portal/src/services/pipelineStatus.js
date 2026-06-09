@@ -53,9 +53,9 @@ function mapDeployResult(status) {
 function securityAggregate(data) {
   const { security } = data || loadPipelineStatus();
   const values = [security.trivyFilesystem, security.trivyImage, security.sonarQube];
-  if (values.some((v) => v === 'Failed')) return 'Failed';
+  if (values.includes('Failed')) return 'Failed';
   if (values.every((v) => v === 'Passed')) return 'Passed';
-  if (values.some((v) => v === 'Skipped')) return 'Skipped';
+  if (values.includes('Skipped')) return 'Skipped';
   return 'Unknown';
 }
 
