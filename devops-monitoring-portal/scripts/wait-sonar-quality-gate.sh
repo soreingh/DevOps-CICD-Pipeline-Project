@@ -45,7 +45,41 @@ while [ "$elapsed" -lt "$MAX_WAIT_SEC" ]; do
 
   if [ "$last_status" = "ERROR" ]; then
     echo "SonarQube Quality Gate FAILED (status: ERROR)"
-    echo "Open ${SONAR_HOST_URL}/dashboard?id=${PROJECT_KEY} for details."
+    printf '%s' "$response" | node -e "
+      const fs = require('fs');
+      let data = {};
+      try { data = JSON.parse(require('fs').readFileSync(0, 'utf8')); } catch {}
+      const conditions = (data.projectStatus && data.projectStatus.conditions) || [];
+      const failed = conditions.filter((c) => c.status === 'ERROR');
+      if (failed.length === 0) {
+        console.log('No failed condition details in API response.');
+        console.log('Open SonarQube → Project → Quality Gate for the full report.');
+      } else {
+        console.log('Failed quality gate conditions:');
+        for (const c of failed) {
+          console.log(
+            '  - ' + c.metricKey + ': actual ' + c.actualValue +
+            ' (threshold ' + c.comparator + ' ' + c.errorThreshold + ')'
+          );
+        }
+      }
+      const logPath = process.env.DEBUG_LOG;
+      if (logPath) {
+        try {
+          const entry = {
+            sessionId: 'dfd10b',
+            hypothesisId: 'H1',
+            location: 'wait-sonar-quality-gate.sh',
+            message: 'quality gate ERROR conditions',
+            data: { failedConditions: failed },
+            timestamp: Date.now(),
+          };
+          fs.mkdirSync(require('path').dirname(logPath), { recursive: true });
+          fs.appendFileSync(logPath, JSON.stringify(entry) + '\n');
+        } catch { /* ignore */ }
+      }
+    "
+    echo "Dashboard: ${SONAR_HOST_URL}/dashboard?id=${PROJECT_KEY}"
     printf 'SONAR_QUALITY_GATE=ERROR\n' > "$OUTPUT_ENV"
     exit 1
   fi
