@@ -192,6 +192,22 @@ Trivy reports and `pipeline-status.json` are available under the Jenkins build *
 
 ---
 
+## AI-assisted development
+
+This project was built with **[Cursor](https://cursor.com)** as the AI pair-programmer to maximize productivity while keeping full engineering ownership of the result. AI was used as a force multiplier — accelerating boilerplate, reviewing configuration, and stress-testing the pipeline — not as a replacement for understanding the tooling.
+
+**Strategic prompting workflow:**
+
+- **Plan mode** — scoped large changes (deployment guide, pipeline documentation, doc restructuring) before writing anything, weighing trade-offs up front instead of coding blindly.
+- **Agent mode** — executed well-defined implementation tasks (Dockerfile hardening, Kubernetes manifests, Jest/Supertest tests, README/steps authoring).
+- **Debug / QA passes** — ran production-readiness reviews of routes, error handling, Docker security, K8s probes, and the Jenkinsfile to catch bugs and risky defaults.
+- **Ask mode** — explored and explained existing code without making changes, keeping investigation separate from edits.
+- **Accuracy verification** — cross-checked the README and `steps.md` against the actual `Jenkinsfile` and scripts so the docs always reflect real pipeline behavior.
+
+The result is a faster build loop with deliberate human review at each step — the same way AI is used effectively on real engineering teams.
+
+---
+
 ## License
 
 MIT — see [`devops-monitoring-portal/steps.md`](devops-monitoring-portal/steps.md).
