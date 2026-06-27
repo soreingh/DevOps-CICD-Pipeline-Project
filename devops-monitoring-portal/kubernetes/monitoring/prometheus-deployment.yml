@@ -23,6 +23,20 @@ spec:
             - --web.enable-lifecycle
           ports:
             - containerPort: 9090
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 9090
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /-/ready
+              port: 9090
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 3
           volumeMounts:
             - name: config
               mountPath: /etc/prometheus
@@ -38,10 +52,11 @@ metadata:
   labels:
     app: prometheus
 spec:
-  type: NodePort
+  # LoadBalancer: Docker Desktop publishes on localhost:9091 (9090 reserved for local Prometheus installs)
+  type: LoadBalancer
   selector:
     app: prometheus
   ports:
-    - port: 9090
+    - name: http
+      port: 9091
       targetPort: 9090
-      nodePort: 30090

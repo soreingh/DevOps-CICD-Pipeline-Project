@@ -1,4 +1,6 @@
 const express = require('express');
+const { version: appVersion } = require('../../package.json');
+const { wantsHtmlPage } = require('../utils/contentNegotiation');
 
 const router = express.Router();
 
@@ -7,15 +9,10 @@ function getHealthPayload() {
   return {
     status: 'healthy',
     service: 'devops-monitoring-portal',
-    version: '1.0.0',
-    environment: 'local',
+    version: appVersion,
+    environment: process.env.NODE_ENV || 'development',
     timestamp: new Date().toISOString(),
   };
-}
-
-/** Browsers send Accept: text/html; probes and curl typically do not. */
-function wantsHtmlPage(req) {
-  return (req.get('Accept') || '').includes('text/html');
 }
 
 /**

@@ -1,0 +1,42 @@
+{
+  "buildNumber": 42,
+  "buildUrl": "http://localhost:8080/job/pipeline-for-devops-monitoring-tool/42/",
+  "jobName": "pipeline-for-devops-monitoring-tool",
+  "result": "SUCCESS",
+  "timestamp": "2026-06-07T16:44:24.000Z",
+  "durationMs": 320000,
+  "version": "1.0.0",
+  "imageTag": "latest",
+  "stages": [
+    { "name": "Unit Test", "status": "SUCCESS" },
+    { "name": "SonarQube Analysis", "status": "SUCCESS" },
+    { "name": "Trivy File System Scan", "status": "SUCCESS" },
+    { "name": "Trivy Image Scan", "status": "SUCCESS" },
+    { "name": "Deploy to Local Kubernetes", "status": "SUCCESS" }
+  ],
+  "security": {
+    "trivyFilesystem": "Passed",
+    "trivyImage": "Passed",
+    "sonarQube": "Passed",
+    "vulnerabilities": { "critical": 0, "high": 2, "medium": 0 }
+  },
+  "kubernetes": {
+    "podsReady": 2,
+    "podsTotal": 2,
+    "status": "Healthy"
+  },
+  "buildHistory": [
+    {
+      "number": 42,
+      "status": "Successful",
+      "description": "Deploy to Local Kubernetes",
+      "timestamp": "2026-06-07T16:44:24.000Z"
+    },
+    {
+      "number": 41,
+      "status": "Failed",
+      "description": "Verify Local Access",
+      "timestamp": "2026-06-07T15:30:00.000Z"
+    }
+  ]
+}

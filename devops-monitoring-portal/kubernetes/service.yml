@@ -5,10 +5,11 @@ metadata:
   labels:
     app: devops-monitoring-portal
 spec:
-  type: NodePort
+  # LoadBalancer: Docker Desktop publishes the service on localhost (no port-forward needed)
+  type: LoadBalancer
   selector:
     app: devops-monitoring-portal
   ports:
-    - port: 3000
+    - name: http
+      port: 30080
       targetPort: 3000
-      nodePort: 30080

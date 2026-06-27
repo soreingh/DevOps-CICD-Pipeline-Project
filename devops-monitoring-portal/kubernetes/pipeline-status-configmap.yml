@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pipeline-status
+  labels:
+    app: devops-monitoring-portal
+data:
+  pipeline-status.json: |
+    {
+      "buildNumber": 0,
+      "buildUrl": "",
+      "jobName": "",
+      "result": "UNKNOWN",
+      "timestamp": "",
+      "durationMs": 0,
+      "version": "1.0.0",
+      "imageTag": "latest",
+      "stages": [],
+      "security": {
+        "trivyFilesystem": "Unknown",
+        "trivyImage": "Unknown",
+        "sonarQube": "Unknown",
+        "vulnerabilities": { "critical": 0, "high": 0, "medium": 0 }
+      },
+      "kubernetes": {
+        "podsReady": 0,
+        "podsTotal": 0,
+        "status": "Unknown"
+      },
+      "buildHistory": []
+    }

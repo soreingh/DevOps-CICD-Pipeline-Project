@@ -3,3 +3,5 @@ coverage/
 .env
 npm-debug.log*
 .DS_Store
+data/pipeline-status.json
+k8s-pods.env

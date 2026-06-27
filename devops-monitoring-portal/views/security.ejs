@@ -18,7 +18,7 @@
   <main class="container">
     <header class="page-header">
       <h1>Security Dashboard</h1>
-      <p>DevSecOps scan summary (Trivy, SonarQube)</p>
+      <p>DevSecOps scan summary from the latest Jenkins pipeline run</p>
     </header>
 
     <section class="section">
@@ -33,22 +33,22 @@
         <tbody>
           <tr>
             <td>Trivy File System Scan</td>
-            <td><span class="badge badge-success"><%= scans.trivyFilesystem %></span></td>
+            <td><span class="badge <%= scanBadges.trivyFilesystem %>"><%= scans.trivyFilesystem %></span></td>
           </tr>
           <tr>
             <td>Trivy Image Scan</td>
-            <td><span class="badge badge-success"><%= scans.trivyImage %></span></td>
+            <td><span class="badge <%= scanBadges.trivyImage %>"><%= scans.trivyImage %></span></td>
           </tr>
           <tr>
-            <td>SonarQube Quality Gate</td>
-            <td><span class="badge badge-success"><%= scans.sonarQubeQualityGate %></span></td>
+            <td>SonarQube Analysis</td>
+            <td><span class="badge <%= scanBadges.sonarQubeQualityGate %>"><%= scans.sonarQubeQualityGate %></span></td>
           </tr>
         </tbody>
       </table>
     </section>
 
     <section class="section">
-      <h2>Vulnerabilities</h2>
+      <h2>Vulnerabilities (HIGH/CRITICAL from Trivy)</h2>
       <table class="data-table">
         <thead>
           <tr>

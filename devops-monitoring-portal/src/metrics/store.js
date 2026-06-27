@@ -1,22 +1,29 @@
 /**
  * In-memory metrics store for Prometheus exposition.
- * Counters increment at runtime; Prometheus scrapes the exported values.
+ * Counters increment at runtime; pipeline snapshot supplies K8s/deploy counts.
  */
 
-let requestsTotal = 0;
+const {
+  loadPipelineStatus,
+  getSecurityScanMetric,
+} = require('../services/pipelineStatus');
 
-const deploymentsTotal = parseInt(process.env.DEPLOYMENT_COUNT || '1', 10) || 1;
+let requestsTotal = 0;
 
 function incrementRequests() {
   requestsTotal += 1;
 }
 
 function getSnapshot() {
+  const data = loadPipelineStatus();
+  const k8s = data.kubernetes;
+
   return {
     requestsTotal,
-    deploymentsTotal,
-    podsReady: 2,
-    podsTotal: 2,
+    deploymentsTotal: data.buildNumber || 1,
+    podsReady: k8s.podsReady,
+    podsTotal: k8s.podsTotal,
+    securityScan: getSecurityScanMetric(data),
   };
 }
 

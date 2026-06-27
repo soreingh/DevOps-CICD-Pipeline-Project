@@ -1,24 +1,27 @@
 const express = require('express');
+const { getSecuritySummary } = require('../services/pipelineStatus');
 
 const router = express.Router();
 
-/**
- * DevSecOps security summary page (mock scan results for pipeline demos).
- */
+function badgeClass(status) {
+  if (status === 'Passed') return 'badge-success';
+  if (status === 'Failed') return 'badge-failed';
+  return 'badge-warning';
+}
+
 router.get('/', (req, res) => {
+  const summary = getSecuritySummary();
+
   res.render('security', {
     title: 'Security Dashboard',
-    scans: {
-      trivyFilesystem: 'Passed',
-      trivyImage: 'Passed',
-      sonarQubeQualityGate: 'Passed',
+    scans: summary.scans,
+    scanBadges: {
+      trivyFilesystem: badgeClass(summary.scans.trivyFilesystem),
+      trivyImage: badgeClass(summary.scans.trivyImage),
+      sonarQubeQualityGate: badgeClass(summary.scans.sonarQubeQualityGate),
     },
-    vulnerabilities: {
-      critical: 0,
-      high: 0,
-      medium: 2,
-    },
-    lastScan: new Date().toLocaleString(),
+    vulnerabilities: summary.vulnerabilities,
+    lastScan: summary.lastScan,
   });
 });
 

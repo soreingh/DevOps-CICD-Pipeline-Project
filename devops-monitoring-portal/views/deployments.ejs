@@ -18,10 +18,13 @@
   <main class="container">
     <header class="page-header">
       <h1>Deployment History</h1>
-      <p>Mock Jenkins build and deployment pipeline runs</p>
+      <p>Recent Jenkins pipeline runs</p>
     </header>
 
     <section class="section">
+      <% if (builds.length === 0) { %>
+      <p class="footer-note">No pipeline history yet. Run the Jenkins job to populate build data.</p>
+      <% } else { %>
       <table class="data-table">
         <thead>
           <tr>
@@ -37,8 +40,10 @@
             <td>
               <% if (build.status === 'Successful') { %>
               <span class="badge badge-success"><%= build.status %></span>
-              <% } else { %>
+              <% } else if (build.status === 'Failed') { %>
               <span class="badge badge-failed"><%= build.status %></span>
+              <% } else { %>
+              <span class="badge badge-warning"><%= build.status %></span>
               <% } %>
             </td>
             <td><%= build.description %></td>
@@ -46,6 +51,7 @@
           <% }); %>
         </tbody>
       </table>
+      <% } %>
     </section>
   </main>
 </body>

@@ -4,18 +4,19 @@ A lightweight Node.js monitoring demo application for local macOS DevSecOps CI/C
 
 ## Project Overview
 
-The DevOps Monitoring Portal provides a simple web dashboard and API endpoints that simulate a production monitoring stack. It is designed for pipeline demonstrations: unit tests in Jenkins, container scans with Trivy, quality gates in SonarQube, Docker image builds, Kubernetes deployments, and Prometheus metric scraping.
+The DevOps Monitoring Portal provides a web dashboard and API endpoints fed by real Jenkins pipeline data. Each build publishes a `pipeline-status.json` snapshot (stages, Trivy counts, K8s pod status, build history) that the app reads from a Kubernetes ConfigMap. Prometheus and Grafana health is checked live on each page load.
 
 ## Features
 
-- **Dashboard** (`GET /`) — DevOps-style status cards for app, Jenkins, Docker, Kubernetes, Prometheus, and Grafana
+- **Dashboard** (`GET /`) — Status cards from the latest Jenkins pipeline snapshot + live Prometheus/Grafana probes
 - **Health API** (`GET /health`) — JSON health check for probes and smoke tests
-- **Metrics API** (`GET /metrics`) — Prometheus exposition format with dynamic uptime
-- **Security page** (`GET /security`) — Mock Trivy and SonarQube scan summary
-- **Deployments page** (`GET /deployments`) — Mock Jenkins build history
+- **Metrics API** (`GET /metrics`) — Prometheus exposition format with live request counts and pipeline K8s metrics
+- **Security page** (`GET /security`) — Trivy/SonarQube stage results and vulnerability counts from the last build
+- **Deployments page** (`GET /deployments`) — Recent Jenkins build history from the pipeline snapshot
+- **Pipeline API** (`GET /api/pipeline-status`) — Raw JSON snapshot for debugging
 - **Jest + Supertest** — Automated route tests for CI pipelines
 - **Docker** — Production-ready `node:20-alpine` image
-- **Kubernetes** — Deployment (2 replicas) and NodePort service
+- **Kubernetes** — Deployment (2 replicas) and LoadBalancer services (localhost on Docker Desktop)
 
 ## Tech Stack
 
@@ -122,6 +123,8 @@ Tests cover the dashboard, health, metrics, security, and deployments routes wit
 
 ## Docker Build and Run
 
+The Dockerfile uses `node:20-alpine`, `npm ci --omit=dev`, layer caching (`package*.json` before source), a non-root `app` user, and `CMD ["node", "src/server.js"]` for proper SIGTERM handling. `.dockerignore` excludes `kubernetes/`, `tests/`, `scripts/`, and scan artifacts to keep the build context small.
+
 Build the image:
 
 ```bash
@@ -131,7 +134,7 @@ docker build -t devops-monitoring-portal:latest .
 Run the container:
 
 ```bash
-docker run --rm -p 3000:3000 devops-monitoring-portal:latest
+docker run --rm -p 3000:3000 -e NODE_ENV=production devops-monitoring-portal:latest
 ```
 
 Verify health:
@@ -162,18 +165,17 @@ kubectl get pods
 kubectl get svc
 ```
 
-**Access on macOS (Docker Desktop):** NodePort URLs often refuse connections on `localhost`. Use port-forward in separate terminals:
+**Access on Docker Desktop (after Jenkins deploy or `kubectl apply`):** Services use `type: LoadBalancer`. Docker Desktop publishes them on `localhost` automatically — no `kubectl port-forward` required.
 
 ```bash
-kubectl port-forward svc/devops-monitoring-portal-service 30080:3000
-kubectl port-forward svc/prometheus-service 9090:9090
-kubectl port-forward svc/grafana-service 3030:3000
+kubectl get svc
+# EXTERNAL-IP column should show localhost for app, prometheus, and grafana services
 ```
 
 | Service | URL | Notes |
 |---------|-----|-------|
 | App | http://localhost:30080 | Dashboard, `/health`, `/metrics` |
-| Prometheus | http://localhost:9090 | Targets → `devops-monitoring-portal` should be **UP** |
+| Prometheus | http://localhost:9091 | Cluster Prometheus (9090 left free for local installs) |
 | Grafana | http://localhost:3030 | Login `admin` / `admin`; dashboard **DevOps Monitoring Portal** |
 
 The app deployment uses `imagePullPolicy: Never` so Kubernetes uses your locally built image. Prometheus and Grafana images pull from Docker Hub on first deploy.
@@ -210,9 +212,24 @@ app_uptime_seconds 42
 
 - **`app_requests_total`** — incremented on each HTTP request (except `/metrics` scrapes)
 - **`app_uptime_seconds`** — derived from `process.uptime()`
-- **`app_deployments_total`** — set from optional env `DEPLOYMENT_COUNT` (default `1`)
+- **`app_deployments_total`** — Jenkins build number from pipeline snapshot
+- **`app_kubernetes_pods_ready`** — ready pod count captured during Verify Deployment
 
-Prometheus in `kubernetes/monitoring/` scrapes `devops-monitoring-portal-service:3000/metrics` every 15 seconds.
+Prometheus in `kubernetes/monitoring/` scrapes `devops-monitoring-portal-service:30080/metrics` every 15 seconds.
+
+## Pipeline status data (Jenkins → app)
+
+After every Jenkins run (success or failure), the `post { always }` block:
+
+1. Fetches stage results from `${BUILD_URL}wfapi/describe`
+2. Fetches recent builds from the Jenkins API
+3. Summarizes Trivy JSON reports (`trivyfs.json`, `trivyimage.json`)
+4. Writes `data/pipeline-status.json` via `scripts/generate-pipeline-status.js`
+5. Publishes it to the `pipeline-status` ConfigMap (mounted at `/data` in app pods)
+
+The UI reflects the **last completed build**. Prometheus/Grafana cards on the dashboard are **live** (HTTP probes inside the cluster).
+
+First run may show seed/empty data until `post` publishes the ConfigMap. No Jenkins API token is stored in the app.
 
 ## Prometheus and Grafana
 
@@ -229,27 +246,27 @@ No new Jenkins plugins or global tools are required — the pipeline applies mon
 ### Data flow
 
 1. App exports metrics at `/metrics`
-2. Prometheus scrapes (ingests) metrics from `devops-monitoring-portal-service:3000`
+2. Prometheus scrapes (ingests) metrics from `devops-monitoring-portal-service:30080`
 3. Grafana queries Prometheus and renders the provisioned **DevOps Monitoring Portal** dashboard
 
 ### Verify after deploy
 
 ```bash
-# All pods Running (2 app + 1 prometheus + 1 grafana)
 kubectl get pods
+kubectl get svc
 
-# Prometheus has metrics
-kubectl port-forward svc/prometheus-service 9090:9090
-# Open http://localhost:9090 → query: app_uptime_seconds
-
-# Grafana dashboard
-kubectl port-forward svc/grafana-service 3030:3000
-# Open http://localhost:3030 → Dashboards → DevOps Monitoring Portal
+curl http://localhost:30080/health
+# Prometheus → http://localhost:9091/targets (devops-monitoring-portal should be UP)
+# Grafana → http://localhost:3030 → Dashboards → DevOps Monitoring Portal
 ```
 
-### Trivy report encoding
+The Jenkins **Verify Local Access** stage runs these checks automatically after each pipeline run.
 
-Trivy table output uses UTF-8 box-drawing characters. If archived reports show garbled text like `â"‚`, open the file as **UTF-8** in your editor, or use `--format json` for artifacts.
+### Trivy scans (report-only for local demo)
+
+Trivy runs with `--exit-code 0` so HIGH/CRITICAL findings are **archived but do not fail the build**. This keeps the portfolio pipeline runnable on a Mac without chasing every base-image CVE. In production you would use `--exit-code 1`, Trivy policies, or a vulnerability management workflow instead.
+
+Filesystem scans run **before** `npm ci` and skip `node_modules`, `coverage`, `.git`, `kubernetes`, `scripts`, and `data` so scans stay fast and focused on application source. Each scan writes JSON once; `scripts/format-trivy-report.js` generates the human-readable `.txt` artifact.
 
 ## Jenkins Pipeline
 
@@ -277,25 +294,53 @@ If Script Path is left as the default `Jenkinsfile`, Jenkins will not find the p
 6. **Docker Desktop:** Kubernetes enabled; context `docker-desktop`
 7. **Monitoring images:** Docker Hub reachable for `prom/prometheus` and `grafana/grafana` on first deploy
 
+### Pipeline options
+
+- **`disableConcurrentBuilds()`** — prevents overlapping deploys to the same local cluster
+- **`buildDiscarder`** — keeps the last 20 builds (10 with artifacts)
+- **`timeout(45 minutes)`** — avoids hung rollouts blocking the agent indefinitely
+
+### Image tagging
+
+Docker images are tagged with **`${BUILD_NUMBER}`** (traceable) and **`latest`** (convenience). The deployment is updated with `kubectl set image` each build. `imagePullPolicy: Never` keeps the local Docker Desktop workflow working without a registry.
+
+**Production alternative:** push to ECR/GCR/ACR, use immutable digests or semver tags, and set `imagePullPolicy: IfNotPresent` or `Always`.
+
 ### Pipeline stages
 
 | Stage | What it does |
 |-------|----------------|
 | Clean Workspace | Remove files from previous builds |
 | Checkout | Clone latest code from GitHub |
+| Preflight | Verify `docker`, `kubectl`, `trivy`, `node`, and `desktop-control-plane` are available |
+| Trivy File System Scan | Vulnerability scan (before `npm ci`) → `trivyfs.json` + `trivyfs.txt` |
 | Install Dependencies | `npm ci` |
 | Unit Test | `npm test` (Jest/Supertest) |
 | SonarQube Analysis | Code quality scan → local SonarQube |
-| Trivy File System Scan | Vulnerability scan → `trivyfs.txt` |
-| Docker Build | `docker build -t devops-monitoring-portal:latest .` |
-| Trivy Image Scan | Image scan → `trivyimage.txt` |
-| Load Image into Kubernetes Node | Import image into cluster node containerd |
-| Deploy to Local Kubernetes | Apply app + monitoring manifests |
+| SonarQube Quality Gate | Optional `waitForQualityGate` (marks build UNSTABLE if gate fails; does not abort) |
+| Docker Build | `docker build` with tags `${BUILD_NUMBER}` and `latest` |
+| Trivy Image Scan | Image scan → `trivyimage.json` + `trivyimage.txt` |
+| Load Image into Kubernetes Node | Import `${BUILD_NUMBER}` image into cluster node containerd |
+| Deploy to Local Kubernetes | `kubectl apply` + `kubectl set image` rolling update (no delete/recreate) |
 | Verify Deployment | `kubectl get pods/deployments/svc` |
-| Smoke Test | In-cluster `/health` check via `kubectl exec` |
-| Verify Monitoring | Prometheus query + Grafana health check |
+| Smoke Test | In-cluster `/health` via `scripts/smoke-k8s.sh` (`kubectl wait` + `kubectl exec`) |
+| Verify Monitoring | Prometheus query + Grafana health check (in-cluster) |
+| Verify Local Access | Secondary LoadBalancer checks for localhost URLs (warns if LB is slow) |
+| post always | Publishes `pipeline-status.json` to ConfigMap, restarts app pods, archives Trivy artifacts |
 
-After a successful build, use port-forward to access UIs (see [Prometheus and Grafana](#prometheus-and-grafana)). Trivy reports are archived as Jenkins build artifacts.
+### SonarQube Quality Gate (optional)
+
+The **SonarQube Quality Gate** stage polls `api/qualitygates/project_status` directly (via `scripts/wait-sonar-quality-gate.sh`) instead of Jenkins `waitForQualityGate`, which can hang for minutes on local setups when webhooks are not configured. Default wait is **120 seconds**; on timeout the pipeline continues and the build is not aborted.
+
+If the gate returns **ERROR**, the build is marked **UNSTABLE** (demo mode — pipeline still completes). Open `http://localhost:9000/dashboard?id=devops-monitoring-portal` for details.
+
+Optional production setup:
+
+1. In SonarQube → Project → Webhooks, add your Jenkins URL (e.g. `http://localhost:8080/sonarqube-webhook/`)
+2. In Jenkins → Configure System → SonarQube servers, enable webhook integration
+3. Tighten enforcement by failing the stage on ERROR (already marks UNSTABLE) or set `abortPipeline: true` if you switch back to `waitForQualityGate`
+
+After a successful build, open the localhost URLs above. Dashboard/security/deployments pages show data from that build.
 
 ## Jenkins DevSecOps Pipeline Fit
 
@@ -303,13 +348,14 @@ After a successful build, use port-forward to access UIs (see [Prometheus and Gr
 |----------------|---------------------------|
 | **Checkout** | Clone repo containing `devops-monitoring-portal/` |
 | **Unit tests** | `npm test` — Jest validates all HTTP routes |
-| **SonarQube** | Scan `src/` for code quality; security page reflects quality gate narrative |
-| **Trivy FS scan** | Scan project directory; security page shows filesystem scan status |
+| **SonarQube** | Scan `src/`; security page shows SonarQube stage pass/fail from snapshot |
+| **Trivy FS scan** | Scan project directory; security page shows real HIGH/CRITICAL counts from Trivy JSON |
 | **Docker build** | `docker build` using included Dockerfile |
-| **Trivy image scan** | Scan `devops-monitoring-portal:latest` after build |
-| **Deploy to K8s** | `kubectl apply` app + `kubernetes/monitoring/` — 2 app replicas with `/health` probes |
-| **Smoke test** | In-cluster `/health` via `kubectl exec` |
+| **Trivy image scan** | Scan `devops-monitoring-portal:${BUILD_NUMBER}` after build |
+| **Deploy to K8s** | `kubectl apply` + `set image` rolling update — 2 app replicas with lightweight `/health` probes |
+| **Smoke test** | In-cluster `/health` via `scripts/smoke-k8s.sh` (`kubectl wait` then `kubectl exec`) |
 | **Verify Monitoring** | Prometheus `app_uptime_seconds` query + Grafana `/api/health` |
+| **post always** | Publishes pipeline snapshot ConfigMap consumed by dashboard, security, deployments |
 | **Observability** | Prometheus scrapes live `/metrics`; Grafana dashboard charts uptime, health, request rate |
 
 This application is intentionally small and self-contained so each pipeline stage completes quickly on a local Mac Jenkins agent.
