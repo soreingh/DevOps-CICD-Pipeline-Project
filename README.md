@@ -84,13 +84,13 @@ GitHub push / Build Now
 | Phase | Stage | What happens |
 |-------|--------|----------------|
 | **Prepare** | Clean Workspace | Removes leftover `node_modules`, scan reports, and artifacts from prior builds. |
-| | Checkout | Shallow Git clone from GitHub into `$WORKSPACE` (retries once on timeout). |
+| | Checkout | Shallow Git clone (`depth: 1`) from SCM into `$WORKSPACE`; `retry(2)` re-attempts once on failure, 20-min timeout per attempt. |
 | | Preflight | Runs `scripts/preflight.sh` — fails fast if Docker daemon, Kubernetes cluster, Trivy, or Node is missing. |
 | **Security (source)** | Trivy File System Scan | Scans application source for HIGH/CRITICAL issues; writes `trivyfs.json` + human-readable `trivyfs.txt`. Runs before dependency install. `--exit-code 0` = report only, does not fail the build. |
 | **Build & test** | Install Dependencies | `npm ci` from `package-lock.json` inside `devops-monitoring-portal/`. |
 | | Unit Test | `npm test` — Jest + Supertest validate `/`, `/health`, `/metrics`, `/security`, `/deployments`, and `/api/pipeline-status`. |
 | **Quality** | SonarQube Analysis | Sends `src/` and test coverage to local SonarQube (`sonar-server`). |
-| | SonarQube Quality Gate | Polls SonarQube API for up to 120s via `wait-sonar-quality-gate.sh`. ERROR → build marked **UNSTABLE**; pipeline continues. |
+| | SonarQube Quality Gate | Polls SonarQube API for up to 120s via `wait-sonar-quality-gate.sh`. OK/WARN → Passed; ERROR → build marked **UNSTABLE** (via `catchError`); timeout → continues without marking UNSTABLE. Pipeline never aborts here. |
 | **Security (image)** | Docker Build | Builds production image from `Dockerfile` (Alpine, non-root, `NODE_ENV=production`). |
 | | Trivy Image Scan | Scans `${APP_NAME}:${BUILD_NUMBER}`; writes `trivyimage.json` + `trivyimage.txt`. |
 | **Deploy** | Load Image into Kubernetes Node | Imports the built image into every cluster node's containerd — host `docker build` alone is not visible to the kubelet when `imagePullPolicy: Never`. |
@@ -98,7 +98,7 @@ GitHub push / Build Now
 | **Verify** | Verify Deployment | Prints pods/deployments/services; records ready pod count to `k8s-pods.env` for the dashboard snapshot. |
 | | Smoke Test | `scripts/smoke-k8s.sh` — waits for pods, then checks `/health` returns `"status":"healthy"` inside the cluster. |
 | | Verify Monitoring | Prometheus must answer `app_uptime_seconds`; Grafana `/api/health` must report database OK. |
-| | Verify Local Access | `scripts/verify-local-access.sh` — checks localhost LoadBalancer URLs (warns if Docker Desktop LB is slow). |
+| | Verify Local Access | `scripts/verify-local-access.sh` — checks localhost LoadBalancer URLs. App LB only warns if slow; Prometheus/Grafana fall back to an in-cluster check and fail only if that also fails. |
 | **Post-build** | post always | Fetches Jenkins stage results + build history; summarizes Trivy JSON; generates `pipeline-status.json`; applies `pipeline-status` ConfigMap; restarts app pods; archives Trivy reports and snapshot as Jenkins artifacts. |
 
 ---
