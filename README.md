@@ -127,9 +127,31 @@ The **web dashboard** reads the ConfigMap snapshot (pipeline stages, Trivy resul
 |------|---------|
 | [`devops-monitoring-portal/`](devops-monitoring-portal/) | Minimal deployable app + Dockerfile + K8s manifests (supports the pipeline; not the main subject) |
 | [`devops-monitoring-portal/Jenkinsfile`](devops-monitoring-portal/Jenkinsfile) | Declarative pipeline definition (Script Path for Jenkins job) |
-| [`devops-monitoring-portal/README.md`](devops-monitoring-portal/README.md) | **Deployment steps** — prerequisites, Jenkins job setup, manual K8s deploy, verification, URLs |
+| [`devops-monitoring-portal/steps.md`](devops-monitoring-portal/steps.md) | **Deployment steps** — prerequisites, Jenkins job setup, manual K8s deploy, verification, URLs |
 
 ---
+
+## Demo app (minimal deploy target)
+
+The Node.js app in `devops-monitoring-portal/` surfaces pipeline output on a simple dashboard. It is not the focus of this repo — see routes below for what the pipeline deploys and verifies.
+
+| Route | Purpose |
+|-------|---------|
+| `GET /` | Dashboard — Jenkins snapshot + live Prometheus/Grafana status |
+| `GET /health` | JSON health check (K8s probes, smoke tests) |
+| `GET /metrics` | Prometheus exposition format |
+| `GET /security` | Trivy/SonarQube results from last build |
+| `GET /deployments` | Jenkins build history from last build |
+| `GET /api/pipeline-status` | Raw pipeline snapshot JSON |
+
+**Local development** (without Kubernetes):
+
+```bash
+cd devops-monitoring-portal
+npm install
+npm start          # http://localhost:3000
+npm test           # Jest + Supertest
+```
 
 ## Jenkins job (quick reference)
 
@@ -139,9 +161,9 @@ Create a **Pipeline** job with **Pipeline script from SCM**:
 Script Path: devops-monitoring-portal/Jenkinsfile
 ```
 
-One-time Jenkins configuration (plugins, `node20` tool, `sonar-scanner`, `sonar-server`, SonarQube token) and the full step-by-step deploy guide are documented in:
+One-time Jenkins configuration (plugins, `node20` tool, `sonar-scanner`, `sonar-server`, SonarQube token) and the full step-by-step deploy guide:
 
-**→ [`devops-monitoring-portal/README.md#full-deployment-guide`](devops-monitoring-portal/README.md#full-deployment-guide)**
+**→ [`devops-monitoring-portal/steps.md`](devops-monitoring-portal/steps.md)**
 
 ---
 
@@ -172,4 +194,4 @@ Trivy reports and `pipeline-status.json` are available under the Jenkins build *
 
 ## License
 
-MIT — see [`devops-monitoring-portal/README.md`](devops-monitoring-portal/README.md).
+MIT — see [`devops-monitoring-portal/steps.md`](devops-monitoring-portal/steps.md).

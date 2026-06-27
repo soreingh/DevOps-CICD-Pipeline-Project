@@ -282,7 +282,7 @@ pipeline {
             echo '  - K8s node:  docker ps --filter name=desktop-control-plane'
             echo '  - Jenkins:   node20 tool, sonar-server credential, Script Path to this Jenkinsfile'
             echo '  - Smoke:     kubectl get pods -l app=devops-monitoring-portal'
-            echo 'See README.md for full local setup steps.'
+            echo 'See steps.md for full deployment steps.'
         }
     }
 }
